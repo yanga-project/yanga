@@ -2819,7 +2819,7 @@ wheels = [
 
 [[package]]
 name = "yanga"
-version = "2.41.1"
+version = "2.42.0"
 source = { editable = "." }
 dependencies = [
     { name = "clanguru" },
@@ -2883,7 +2883,7 @@ requires-dist = [
     { name = "py-app-dev", specifier = ">=2.20,<3" },
     { name = "pyelftools", marker = "extra == 'zephyr'", specifier = ">=0.29" },
     { name = "pykwalify", marker = "extra == 'zephyr'", specifier = ">=1.8" },
-    { name = "pypeline-runner", specifier = ">=1.41.0,<2" },
+    { name = "pypeline-runner", specifier = ">=1.41,<2" },
     { name = "pyyaml", marker = "extra == 'zephyr'", specifier = ">=6" },
     { name = "requests", marker = "extra == 'zephyr'", specifier = ">=2.32.4" },
     { name = "typer", specifier = ">=0,<1" },
