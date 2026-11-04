@@ -23,6 +23,7 @@ from yanga.cmake.cmake_backend import (
     IncludeScope,
 )
 from yanga.cmake.gtest import GTestCMakeArtifactsLocator, GTestCMakeGenerator, GTestCMakeGeneratorConfig, GTestComponentCMakeGenerator
+from yanga.cmake.sphinx_test_report import TestResultFile
 
 
 @pytest.fixture
@@ -119,6 +120,14 @@ def test_gtest_cmake_generator_coverage(execution_context: ExecutionContext, out
     assert any("gcovr" in tool for tool in command_tools), "Should use gcovr for reports"
 
 
+def test_junit_report_is_registered_as_test_result(execution_context: ExecutionContext, output_dir: Path) -> None:
+    GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    test_results = execution_context.data_registry.find_data(TestResultFile)
+    assert [entry.target.target_name for entry in test_results] == ["CompA_test"]
+    assert test_results[0].junit_report.to_path().name == "CompA_junit.xml"
+
+
 def test_coverage_targets_register_clean_files(execution_context: ExecutionContext, output_dir: Path) -> None:
     elements = GTestCMakeGenerator(execution_context, output_dir).generate()
 
@@ -170,6 +179,7 @@ def test_automock_enabled_by_default(execution_context: ExecutionContext, output
     executable = assert_element_of_type(elements, CMakeAddExecutable, lambda exec: exec.name == "CompA")
     expected_test_source = f"{execution_context.project_root_dir.as_posix()}/compA/test_compA_source.cpp"
     assert [str(source) for source in executable.sources] == [expected_test_source, f"{output_dir.as_posix()}/CompA/mockup_CompA.cc"]
+    assert [source.as_posix() for source in execution_context.components[0].test_sources] == [expected_test_source]
     assert set(executable.libraries) == {"GTest::gtest_main", "GTest::gmock_main", "pthread", "CompA_PC_lib"}
     custom_command = assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: cmd.description.startswith("Run the test executable"))
     assert len(custom_command.commands) == 1

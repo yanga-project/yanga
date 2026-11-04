@@ -8,6 +8,7 @@ from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileTyp
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
 from yanga.cmake.cmake_backend import CMakeAddTargetCleanFiles, CMakeCommand, CMakeComment, CMakeCustomTarget, CMakeElement, CMakePath
 from yanga.cmake.generator import CMakeGenerator
+from yanga.cmake.sphinx_test_report import TestResultFile
 
 
 class ReportCMakeGenerator(CMakeGenerator):
@@ -129,13 +130,7 @@ class ReportCMakeGenerator(CMakeGenerator):
                 source_files.extend([CMakePath(source) for source in component.sources])
 
             # Check if there are any test results registered for the component
-            test_results = any(
-                entry
-                for entry in self.execution_context.data_registry.find_data(ReportRelevantFiles)
-                # TODO: when test results are registered, use the TEST_RESULT type.
-                #       Currently, we assume that tests were executed if there are coverage results
-                if entry.file_type == ReportRelevantFileType.COVERAGE_RESULT and entry.target.component_name == component.name
-            )
+            test_results = any(entry.target.component_name == component.name for entry in self.execution_context.data_registry.find_data(TestResultFile))
             if test_results:
                 source_files.extend([CMakePath(source) for source in component.test_sources])
             source_files_output_md = [component_build_dir.joinpath(f"{source_file.to_path().name}.md") for source_file in source_files]
