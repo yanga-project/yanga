@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 
 def make_list_unique(seq: list[Any]) -> list[Any]:
@@ -97,7 +97,7 @@ class CMakeAddLibrary(CMakeElement):
         files: list[Path] | None = None,
         type: LibraryType | None = None,
         compile_options: list[str] | None = None,
-        component_name: Optional[str] = None,
+        component_name: str | None = None,
     ) -> None:
         self.name = name
         self.files = files or []
@@ -127,8 +127,8 @@ class CMakeVariable(CMakeElement):
     name: str
     value: str
     cache: bool = False
-    type: Optional[str] = None
-    docstring: Optional[str] = None
+    type: str | None = None
+    docstring: str | None = None
     force: bool = False
 
     def to_string(self) -> str:
@@ -151,15 +151,15 @@ class CMakePath:
     def __init__(
         self,
         path: Path,
-        variable: Optional[str] = None,
-        relative_path: Optional[Path] = None,
+        variable: str | None = None,
+        relative_path: Path | None = None,
     ) -> None:
         super().__init__()
         self.path = path
         self.variable = variable
         self.relative_path = relative_path
 
-    def to_cmake_element(self) -> Optional[CMakeElement]:
+    def to_cmake_element(self) -> CMakeElement | None:
         return CMakeVariable(self.variable, self.to_path().as_posix()) if self.variable else None
 
     def to_string(self) -> str:
@@ -236,12 +236,12 @@ class CMakeTargetIncludeDirectories(CMakeElement):
 @dataclass
 class CMakeAddExecutable(CMakeElement):
     name: str
-    sources: list[Union[str, CMakePath, CMakeAddLibrary]]
+    sources: list[str | CMakePath | CMakeAddLibrary]
     libraries: list[str] = field(default_factory=list)
     compile_options: list[str] = field(default_factory=list)
     link_options: list[str] = field(default_factory=list)
     exclude_from_all: bool = False
-    component_name: Optional[str] = None
+    component_name: str | None = None
 
     def to_string(self) -> str:
         content = self._add_executable()
@@ -293,7 +293,7 @@ class CMakeTargetLinkLibraries(CMakeElement):
 
     target: str
     libraries: list[str]
-    scope: Optional[LinkScope] = None
+    scope: LinkScope | None = None
 
     def to_string(self) -> str:
         arguments = [self.target, *([self.scope.name] if self.scope else []), *self.libraries]
@@ -403,12 +403,12 @@ class CMakeBuildEvent(Enum):
 class CMakeCustomCommand(CMakeElement):
     description: str
     commands: list[CMakeCommand]
-    outputs: Optional[list[CMakePath]] = None
-    depends: Optional[Sequence[str | CMakePath]] = None
-    working_directory: Optional[CMakePath] = None
-    build_event: Optional[CMakeBuildEvent] = None
-    byproducts: Optional[list[CMakePath]] = None
-    target: Optional[str] = None
+    outputs: list[CMakePath] | None = None
+    depends: Sequence[str | CMakePath] | None = None
+    working_directory: CMakePath | None = None
+    build_event: CMakeBuildEvent | None = None
+    byproducts: list[CMakePath] | None = None
+    target: str | None = None
     command_expand_lists: bool = False
 
     @cached_property
@@ -493,9 +493,9 @@ class CMakeCustomTarget(CMakeElement):
         name: str,
         description: str,
         commands: list[CMakeCommand],
-        depends: Optional[Sequence[str | CMakePath]] = None,
+        depends: Sequence[str | CMakePath] | None = None,
         default_target: bool = False,
-        byproducts: Optional[list[CMakePath]] = None,
+        byproducts: list[CMakePath] | None = None,
     ) -> None:
         super().__init__()
         self.name = name
@@ -530,7 +530,7 @@ class CMakeAddSubdirectory(CMakeElement):
     https://cmake.org/cmake/help/latest/command/add_subdirectory.html#add-subdirectory
     """
 
-    def __init__(self, source_dir: CMakePath, build_dir: Optional[CMakePath] = None) -> None:
+    def __init__(self, source_dir: CMakePath, build_dir: CMakePath | None = None) -> None:
         super().__init__()
         self.source_dir = source_dir
         self.build_dir = build_dir

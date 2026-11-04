@@ -1,8 +1,8 @@
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable
 
 from clanguru.doc_generator import MarkdownFormatter
 from yanga_core.domain.execution_context import ExecutionContext, UserVariantRequest

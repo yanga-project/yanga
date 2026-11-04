@@ -1,7 +1,6 @@
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from py_app_dev.core.exceptions import UserNotificationException
@@ -51,27 +50,27 @@ def init(
 @time_it("run")
 def run(
     project_dir: Path = project_dir_option,
-    platform: Optional[str] = typer.Option(
+    platform: str | None = typer.Option(
         None,
         help="Platform for which to build (see the available platforms in the configuration).",
     ),
-    variant: Optional[str] = typer.Option(
+    variant: str | None = typer.Option(
         None,
         help="SPL variant name. If none is provided, it will prompt to select one.",
     ),
-    component: Optional[str] = typer.Option(
+    component: str | None = typer.Option(
         None,
         help="Restrict the scope to one specific component.",
     ),
-    target: Optional[str] = typer.Option(
+    target: str | None = typer.Option(
         None,
         help="Define a specific target to execute.",
     ),
-    build_type: Optional[str] = typer.Option(
+    build_type: str | None = typer.Option(
         None,
         help="Build type to use (e.g., 'Debug', 'Release').",
     ),
-    step: Optional[str] = typer.Option(
+    step: str | None = typer.Option(
         None,
         help="Name of the step to run (as written in the pipeline config).",
     ),
@@ -118,7 +117,7 @@ def run(
 @time_it("info")
 def info(
     project_dir: Path = project_dir_option,
-    output: Optional[Path] = output_option,
+    output: Path | None = output_option,
 ) -> None:
     InfoCommand().do_run(InfoCommandConfig(project_dir, output))
 
@@ -150,11 +149,11 @@ def gui(
 @time_it("features")
 def features(
     project_dir: Path = project_dir_option,
-    variant: Optional[str] = typer.Option(
+    variant: str | None = typer.Option(
         None,
         help="Variant whose selection to edit. Alone it edits the product selection; with --platform, the variant's selection for that platform.",
     ),
-    platform: Optional[str] = typer.Option(
+    platform: str | None = typer.Option(
         None,
         help="Platform whose feature model to open. Without --variant and --platform, all variants' product selections are shown.",
     ),

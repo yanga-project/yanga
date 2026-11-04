@@ -5,7 +5,6 @@ import tkinter
 from collections.abc import Callable
 from enum import auto
 from pathlib import Path
-from typing import Optional
 
 import customtkinter
 from py_app_dev.core.exceptions import UserNotificationException
@@ -31,7 +30,7 @@ class _Tooltip:
     def __init__(self, widget: customtkinter.CTkBaseClass) -> None:
         self.widget = widget
         self.text = ""
-        self._tip: Optional[customtkinter.CTkToplevel] = None
+        self._tip: customtkinter.CTkToplevel | None = None
         widget.bind("<Enter>", self._show)
         widget.bind("<Leave>", self._hide)
 
@@ -71,7 +70,7 @@ class _LabeledOptionMenu:
         self,
         parent: customtkinter.CTkBaseClass,
         label_text: str,
-        command: Optional[Callable[[str], None]] = None,
+        command: Callable[[str], None] | None = None,
         with_tooltip: bool = False,
     ) -> None:
         self._label = customtkinter.CTkLabel(parent, text=label_text, anchor="w")
@@ -82,7 +81,7 @@ class _LabeledOptionMenu:
             dynamic_resizing=False,
         )
         self._user_command = command
-        self._tooltip: Optional[_Tooltip] = _Tooltip(self._menu) if with_tooltip else None
+        self._tooltip: _Tooltip | None = _Tooltip(self._menu) if with_tooltip else None
 
     def grid(self, row: int) -> int:
         self._label.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
@@ -141,15 +140,15 @@ class YangaView(View):
         return self.component_menu.get()
 
     @property
-    def selected_build_type(self) -> Optional[str]:
+    def selected_build_type(self) -> str | None:
         return self.build_type_menu.get()
 
     @property
-    def selected_variant_build_target(self) -> Optional[str]:
+    def selected_variant_build_target(self) -> str | None:
         return self.variant_build_target_menu.get()
 
     @property
-    def selected_component_build_target(self) -> Optional[str]:
+    def selected_component_build_target(self) -> str | None:
         return self.component_build_target_menu.get()
 
     @property
@@ -324,8 +323,8 @@ class YangaPresenter(Presenter):
         self.view = view
         self.event_manager = event_manager
         self.project_dir = project_dir
-        self.project_slurper: Optional[YangaProjectSlurper] = None
-        self.info: Optional[InfoProject] = None
+        self.project_slurper: YangaProjectSlurper | None = None
+        self.info: InfoProject | None = None
         self._load_project_state()
         self.event_manager.subscribe(YangaEvent.BUILD_EVENT, self._build_trigger)
         self.event_manager.subscribe(YangaEvent.COMPONENT_BUILD_EVENT, self._component_build_trigger)
@@ -339,12 +338,12 @@ class YangaPresenter(Presenter):
         self.event_manager.subscribe(YangaEvent.CLEAN_VARIANT_EVENT, self._clean_variant_trigger)
         self.event_manager.subscribe(YangaEvent.OPEN_IN_VSCODE, self._open_in_vscode_trigger)
         self.command_running_flag = False
-        self.running_command_config: Optional[RunCommandConfig] = None
-        self.selected_platform: Optional[str] = None
-        self.selected_variant: Optional[str] = None
-        self.selected_component: Optional[str] = None
-        self.selected_variant_build_target: Optional[str] = None
-        self.selected_component_build_target: Optional[str] = None
+        self.running_command_config: RunCommandConfig | None = None
+        self.selected_platform: str | None = None
+        self.selected_variant: str | None = None
+        self.selected_component: str | None = None
+        self.selected_variant_build_target: str | None = None
+        self.selected_component_build_target: str | None = None
         # Worker → UI handshake. Worker pushes a sentinel on completion; the UI thread polls and reacts.
         # Avoids touching Tk from the worker thread (customtkinter on macOS is unreliable about that).
         self._command_done_queue: queue.Queue[bool] = queue.Queue()
@@ -364,17 +363,15 @@ class YangaPresenter(Presenter):
             pass
         self.view.root.after(100, self._poll_command_done)
 
-    def _build_trigger(self, variant_name: str, build_type: Optional[str] = None, build_target: Optional[str] = None, pristine: bool = False) -> None:
+    def _build_trigger(self, variant_name: str, build_type: str | None = None, build_target: str | None = None, pristine: bool = False) -> None:
         target = build_target if build_target else str(UserRequestTarget.BUILD)
         self.run_command(self._make_config(target=target, variant_name=variant_name, build_type=build_type, pristine=pristine))
 
-    def _component_build_trigger(
-        self, variant_name: str, component_name: str, build_type: Optional[str] = None, build_target: Optional[str] = None, pristine: bool = False
-    ) -> None:
+    def _component_build_trigger(self, variant_name: str, component_name: str, build_type: str | None = None, build_target: str | None = None, pristine: bool = False) -> None:
         target = build_target if build_target else str(UserRequestTarget.BUILD)
         self.run_command(self._make_config(target=target, variant_name=variant_name, component_name=component_name, build_type=build_type, pristine=pristine))
 
-    def _component_clean_trigger(self, variant_name: str, component_name: str, build_type: Optional[str] = None) -> None:
+    def _component_clean_trigger(self, variant_name: str, component_name: str, build_type: str | None = None) -> None:
         self.run_command(self._make_config(target=str(UserRequestTarget.CLEAN), variant_name=variant_name, component_name=component_name, build_type=build_type))
 
     def _refresh_trigger(self) -> None:
@@ -543,9 +540,7 @@ class YangaPresenter(Presenter):
 
         threading.Thread(target=worker, name=f"yanga-command-{config.target}", daemon=True).start()
 
-    def _make_config(
-        self, *, target: str, variant_name: Optional[str], component_name: Optional[str] = None, build_type: Optional[str] = None, pristine: bool = False
-    ) -> RunCommandConfig:
+    def _make_config(self, *, target: str, variant_name: str | None, component_name: str | None = None, build_type: str | None = None, pristine: bool = False) -> RunCommandConfig:
         return RunCommandConfig(
             project_dir=self.project_dir,
             platform=self.selected_platform,

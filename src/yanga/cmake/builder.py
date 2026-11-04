@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 from py_app_dev.core.exceptions import UserNotificationException
 from py_app_dev.core.find import find_elements_of_type
@@ -30,7 +29,7 @@ from .targets import Target, TargetsData, TargetType
 from .variant_config import ConfigCMakeGenerator
 
 
-def get_toolchain_config_file(platform: PlatformConfig) -> Optional[str]:
+def get_toolchain_config_file(platform: PlatformConfig) -> str | None:
     """Return the raw toolchain file path from platform configs (id='toolchain'), or None."""
     toolchain_config = next((cfg for cfg in platform.configs if cfg.id == "toolchain"), None)
     if toolchain_config and toolchain_config.file:
@@ -39,7 +38,7 @@ def get_toolchain_config_file(platform: PlatformConfig) -> Optional[str]:
 
 
 class CMakeGeneratorReference:
-    def __init__(self, group_name: Optional[str], _class: type[CMakeGenerator]) -> None:
+    def __init__(self, group_name: str | None, _class: type[CMakeGenerator]) -> None:
         self.group_name = group_name
         self._class = _class
 

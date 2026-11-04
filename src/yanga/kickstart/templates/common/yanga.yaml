@@ -4,7 +4,8 @@ pipeline:
       module: pypeline.steps.create_venv
       config:
         python_version: "3.11"
-        python_package_manager: poetry>=2.2
+        python_package_manager: uv>=0.13.4
+        bootstrap_venv: false
     - step: PoksInstall
       module: yanga_core.steps.poks_install
       description: Install build tools (compiler, cmake, ninja)

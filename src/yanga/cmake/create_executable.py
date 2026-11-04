@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from mashumaro import DataClassDictMixin
 from yanga_core.domain.artifact import Artifact, collect_directories, filter_artifacts, for_consumer, with_label
@@ -44,7 +44,7 @@ class CreateExecutableCMakeGenerator(CMakeGenerator):
     #: Linked into every component library. Empty here; a platform whose build system keeps its compiler flags on an interface target names it.
     component_link_libraries: ClassVar[tuple[LinkLibrary, ...]] = ()
 
-    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: dict[str, Any] | None = None) -> None:
         super().__init__(execution_context, output_dir, config)
 
     @cached_property
@@ -53,7 +53,7 @@ class CreateExecutableCMakeGenerator(CMakeGenerator):
         return CreateExecutableConfig.from_dict(self.config) if self.config else CreateExecutableConfig()
 
     @property
-    def variant_name(self) -> Optional[str]:
+    def variant_name(self) -> str | None:
         return self.execution_context.variant_name
 
     def generate(self) -> list[CMakeElement]:

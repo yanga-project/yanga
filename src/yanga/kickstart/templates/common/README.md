@@ -4,7 +4,7 @@ A C project built with [Yanga](https://github.com/yanga-project/yanga). It suppo
 
 ## Prerequisites
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - Git
 - [pipx](https://pipx.pypa.io) to install Python tools (recommended)
 

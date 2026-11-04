@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from yanga_core.domain.execution_context import ExecutionContext
 from yanga_core.domain.generated_file import GeneratedFile, GeneratedFileIf
@@ -13,7 +13,7 @@ __all__ = ["CMakeFile", "CMakeGenerator", "GeneratedFile", "GeneratedFileIf"]
 class CMakeGenerator(ABC):
     """Base class for CMake generators."""
 
-    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: dict[str, Any] | None = None) -> None:
         self.execution_context = execution_context
         self.config = config
         self.output_dir = output_dir
@@ -31,7 +31,7 @@ class CMakeFile(GeneratedFileIf):
     def to_string(self) -> str:
         return "\n".join(str(elem) for elem in self.content)
 
-    def append(self, content: Optional[CMakeElement]) -> "CMakeFile":
+    def append(self, content: CMakeElement | None) -> "CMakeFile":
         if content:
             self.content.append(content)
         return self

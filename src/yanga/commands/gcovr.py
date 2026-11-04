@@ -13,7 +13,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import auto
 from pathlib import Path
-from typing import Union
 
 from py_app_dev.core.cmd_line import Command, register_arguments_for_config_dataclass
 from py_app_dev.core.config import BaseConfigJSONMixin
@@ -44,7 +43,7 @@ def _deserialize_component_objects(raw: object) -> list[Path]:
       - Nested lists produced by earlier parsing: [[Path("a.obj"), ...], ...]
     """
 
-    def iter_items(value: object) -> Iterator[Union[str, Path]]:
+    def iter_items(value: object) -> Iterator[str | Path]:
         if isinstance(value, str):
             # CMake style list or single path
             yield from (p for p in value.split(";") if p)

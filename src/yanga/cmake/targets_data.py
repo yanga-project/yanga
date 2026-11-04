@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
@@ -14,7 +14,7 @@ class TargetsDataCMakeGenerator(CMakeGenerator):
         self,
         execution_context: ExecutionContext,
         output_dir: Path,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(execution_context, output_dir, config)
         self.artifacts_locator = CMakeArtifactsLocator(output_dir, execution_context.spl_paths)

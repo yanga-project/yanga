@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 from py_app_dev.core.logging import logger
 
@@ -12,7 +11,7 @@ class CMakeRunner:
         self.project_dir = project_dir
         self.build_dir = build_dir
 
-    def get_configure_command(self, toolchain_file: Optional[str], variant_name: Optional[str], platform_name: Optional[str], build_type: Optional[str] = None) -> list[str | Path]:
+    def get_configure_command(self, toolchain_file: str | None, variant_name: str | None, platform_name: str | None, build_type: str | None = None) -> list[str | Path]:
         cmake_args = [
             "-S",
             self.project_dir.absolute().as_posix(),

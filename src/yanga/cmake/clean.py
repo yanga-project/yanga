@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from py_app_dev.core.exceptions import UserNotificationException
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
@@ -23,8 +23,8 @@ class ComponentCleanCMakeGenerator(CMakeGenerator):
         self,
         execution_context: ExecutionContext,
         output_dir: Path,
-        config: Optional[dict[str, Any]] = None,
-        existing_elements: Optional[list[CMakeElement]] = None,
+        config: dict[str, Any] | None = None,
+        existing_elements: list[CMakeElement] | None = None,
     ) -> None:
         super().__init__(execution_context, output_dir, config)
         self.artifacts_locator = CMakeArtifactsLocator(output_dir, execution_context.spl_paths)
