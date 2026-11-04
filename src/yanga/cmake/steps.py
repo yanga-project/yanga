@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from py_app_dev.core.logging import logger
 from pypeline.domain.pipeline import PipelineStep
@@ -23,7 +23,7 @@ class GenerateBuildSystemFiles(PipelineStep[ExecutionContext]):
     "always run; build system handles its own deps" pattern.
     """
 
-    def __init__(self, execution_context: ExecutionContext, group_name: Optional[str] = None, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, execution_context: ExecutionContext, group_name: str | None = None, config: dict[str, Any] | None = None) -> None:
         super().__init__(execution_context, group_name, config)
         self.logger = logger.bind()
         self.generated_files: list[Path] = []
@@ -56,7 +56,7 @@ class GenerateBuildSystemFiles(PipelineStep[ExecutionContext]):
 class ExecuteBuild(PipelineStep[ExecutionContext]):
     """The step is always executed. The dependencies are handled by the build system itself."""
 
-    def __init__(self, execution_context: ExecutionContext, group_name: Optional[str], config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, execution_context: ExecutionContext, group_name: str | None, config: dict[str, Any] | None = None) -> None:
         super().__init__(execution_context, group_name, config)
         self.logger = logger.bind()
 

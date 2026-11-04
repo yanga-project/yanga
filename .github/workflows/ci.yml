@@ -17,9 +17,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: "3.13"
+          check-latest: true
+      - uses: astral-sh/setup-uv@v7
       - name: Install pypeline runner
-        run: pip install pypeline-runner>=1.38
+        run: pip install pypeline-runner>=1.41.0
         shell: bash
       - name: Run pypeline
         run: pypeline run --config-file pipeline/lint.yaml
@@ -41,7 +43,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.10"
+          - "3.11"
           - "3.13"
         os:
           - ubuntu-latest
@@ -53,8 +55,10 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          check-latest: true
+      - uses: astral-sh/setup-uv@v7
       - name: Install pypeline runner
-        run: pip install pypeline-runner>=1.38
+        run: pip install pypeline-runner>=1.41.0
         shell: bash
       - name: Run pypeline
         run: pypeline run --config-file pipeline/test.yaml --input python_version=${{ matrix.python-version }}

@@ -17,7 +17,7 @@ exclude_patterns = [
 html_context: dict[str, Any] = {
     "env": {
         # Add current execution time in UTC
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
+        "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S %Z")
     }
 }
 

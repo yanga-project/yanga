@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from yanga_core.docs.sphinx import SphinxConfig
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
@@ -15,7 +15,7 @@ class ReportCMakeGenerator(CMakeGenerator):
         self,
         execution_context: ExecutionContext,
         output_dir: Path,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(execution_context, output_dir, config)
         self.artifacts_locator = CMakeArtifactsLocator(output_dir, execution_context.spl_paths)
@@ -167,7 +167,7 @@ class ReportCMakeGenerator(CMakeGenerator):
                                     "myst",
                                 ],
                             )
-                            for source_file, output_md in zip(source_files, source_files_output_md)
+                            for source_file, output_md in zip(source_files, source_files_output_md, strict=False)
                         ],
                         depends=[self.artifacts_locator.get_build_artifact(BuildArtifact.COMPILE_COMMANDS)],
                         byproducts=source_files_output_md,

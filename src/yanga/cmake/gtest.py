@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from mashumaro import DataClassDictMixin
 from py_app_dev.core.config import merge_configs
@@ -64,7 +64,7 @@ class GTestCMakeGeneratorConfig(DataClassDictMixin):
     #: If this is enabled, all includes are defined globally and not component specific
     use_global_includes: bool = False
     #: Mocking configuration
-    mocking: Optional[MockingConfig] = None
+    mocking: MockingConfig | None = None
 
     @property
     def automock(self) -> bool:
@@ -111,7 +111,7 @@ class CMakeMockupCreator:
         gtest_cmake_component: GTestCMakeComponent,
         component_object_library_target: str,
         artifacts_locator: GTestCMakeArtifactsLocator,
-        mocking_config: Optional[MockingConfig],
+        mocking_config: MockingConfig | None,
     ):
         self.artifacts_locator = artifacts_locator
         self.gtest_cmake_component = gtest_cmake_component
@@ -483,12 +483,12 @@ class GTestComponentCMakeGenerator:
 class GTestCMakeGenerator(CMakeGenerator):
     """Generates CMake elements to build an executable for a variant."""
 
-    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: dict[str, Any] | None = None) -> None:
         super().__init__(execution_context, output_dir, config)
         self.artifacts_locator = GTestCMakeArtifactsLocator(output_dir, execution_context)
 
     @property
-    def variant_name(self) -> Optional[str]:
+    def variant_name(self) -> str | None:
         return self.execution_context.variant_name
 
     @cached_property

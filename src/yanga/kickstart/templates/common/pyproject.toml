@@ -6,10 +6,9 @@ authors = [
   { name = "Your Name" },
 ]
 
-requires-python = "<4.0,>=3.10"
+requires-python = "<4.0,>=3.11"
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -28,6 +27,3 @@ dependencies = [
   "west>=1,<2",
   "yanga>=2,<3",
 ]
-
-[tool.poetry]
-package-mode = false

@@ -1,7 +1,7 @@
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from mashumaro import DataClassDictMixin
 from mashumaro.exceptions import MissingField
@@ -63,15 +63,15 @@ class ZephyrBuildConfig(DataClassDictMixin):
     #: The CMake source directory west configures, relative to the project root.
     source_dir: str = "."
     #: The poks app providing the cross toolchain. Its name is also the compiler prefix.
-    toolchain_app: Optional[str] = None
+    toolchain_app: str | None = None
     #: Sysroot relative to the toolchain root, when Zephyr's own detection composes a wrong path.
-    sysroot: Optional[str] = None
+    sysroot: str | None = None
 
 
 class ZephyrBuild(PipelineStep[ExecutionContext]):
     """Builds or flashes the variant with west; `--target flash` flashes, any other target is passed to `west build -t`."""
 
-    def __init__(self, execution_context: ExecutionContext, group_name: Optional[str], config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, execution_context: ExecutionContext, group_name: str | None, config: dict[str, Any] | None = None) -> None:
         super().__init__(execution_context, group_name, config)
         try:
             self.zephyr_config = ZephyrBuildConfig.from_dict(config or {})

@@ -1,7 +1,7 @@
 """CMake configuration generator for variant-specific configuration."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from yanga_core.domain.config import VarsConfig
 from yanga_core.domain.config_utils import collect_configs_by_id, parse_config
@@ -14,7 +14,7 @@ from .generator import CMakeGenerator
 class ConfigCMakeGenerator(CMakeGenerator):
     """Generates CMake configuration file with variant-specific configuration variables."""
 
-    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, execution_context: ExecutionContext, output_dir: Path, config: dict[str, Any] | None = None) -> None:
         super().__init__(execution_context, output_dir, config)
 
     def generate(self) -> list[CMakeElement]:

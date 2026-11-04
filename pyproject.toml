@@ -13,14 +13,13 @@ authors = [
   { name = "cuinixam", email = "me@cuinixam.me" },
 ]
 
-requires-python = "<4.0,>=3.10"
+requires-python = "<4.0,>=3.11"
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Developers",
   "Natural Language :: English",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -38,7 +37,7 @@ dependencies = [
   "pillow>=10.1,<11",
   "poks>=0,<1",
   "py-app-dev>=2.20,<3",
-  "pypeline-runner>=1.38,<2",
+  "pypeline-runner>=1.41,<2",
   "typer>=0,<1",
   "yanga-core>=0.13.1,<1",
 ]
@@ -84,7 +83,7 @@ packages = [
 ]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py311"
 line-length = 180
 lint.select = [
   "B",   # flake8-bugbear
