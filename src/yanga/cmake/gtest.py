@@ -17,6 +17,7 @@ from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileTyp
 
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
 from yanga.cmake.coverage import CoverageArtifactsLocator, CoverageRelevantFile
+from yanga.cmake.sphinx_test_report import TestResultFile
 
 from .cmake_backend import (
     CMakeAddExecutable,
@@ -256,9 +257,8 @@ class GTestComponentCMakeGenerator:
 
         # Components without tests will just be compiled
         if component.is_testable:
-            all_sources = component.test_sources
-            if mockup_generator:
-                all_sources += mockup_generator.get_mockup_sources()
+            # A new list: the mockups belong to the executable, not to the component test sources the report shows.
+            all_sources = component.test_sources + (mockup_generator.get_mockup_sources() if mockup_generator else [])
             test_executable = self.add_executable(gtest_cmake_component.executable_name, all_sources, component_sources_object_library.target_name, component.name)
             elements.append(test_executable)
 
@@ -277,6 +277,12 @@ class GTestComponentCMakeGenerator:
             # Create the custom target to execute the tests
             execute_tests_command = self.run_executable(component.name, test_executable.name)
             elements.append(execute_tests_command)
+            # Register the JUnit report for the generators that render it (e.g. SphinxTestReportCMakeGenerator)
+            component_test_target = UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=UserRequestTarget.TEST)
+            self.execution_context.data_registry.insert(
+                TestResultFile(target=component_test_target, junit_report=self.artifacts_locator.get_component_build_dir(component.name).joinpath(f"{component.name}_junit.xml")),
+                component_test_target.target_name,
+            )
 
             # Generate coverage report
             coverage_cmd = self.create_coverage_report(component.name, execute_tests_command, productive_sources, component_sources_object_library.target_name)
