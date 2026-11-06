@@ -65,7 +65,7 @@ class CreateExecutableCMakeGenerator(CMakeGenerator):
 
     @property
     def executable_target_name(self) -> str:
-        """The target the variant's component libraries are linked into. Platforms whose build system owns the executable override it."""
+        """The target the variant `build` target depends on: the linked executable. Platforms whose build system owns the executable override it."""
         return "${PROJECT_NAME}"
 
     def component_library_target(self, component: Component) -> str:

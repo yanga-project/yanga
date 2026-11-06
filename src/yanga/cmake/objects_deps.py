@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope
+from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget, UserVariantRequest
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType, ReportRelevantHtmlContent
 
 from yanga.cmake.artifacts_locator import CMakeArtifactsLocator
@@ -32,7 +32,8 @@ class ObjectsDepsCMakeGenerator(CMakeGenerator):
         objects_deps_cmake_cmd = CMakeCustomCommand(
             description="Run clanguru to generate the objects dependencies report",
             outputs=[objects_deps_html],
-            depends=["compile"],
+            # clanguru reads every object in compile_commands.json, so the whole variant must be linked first.
+            depends=[UserVariantRequest(self.execution_context.variant_name, UserRequestTarget.BUILD).target_name],
             commands=[
                 CMakeCommand(
                     "${CMAKE_COMMAND}",
