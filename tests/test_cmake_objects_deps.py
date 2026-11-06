@@ -20,7 +20,7 @@ def test_generate(objects_deps_generator: ObjectsDepsCMakeGenerator) -> None:
     # Should generate one custom command and one custom target
     custom_command = assert_element_of_type(elements, CMakeCustomCommand)
     assert custom_command.description == "Run clanguru to generate the objects dependencies report"
-    assert custom_command.depends == ["compile"]
+    assert custom_command.depends == ["build"]
     output_path = assert_element_of_type(custom_command.outputs, CMakePath)
     assert "objects_deps.html" in output_path.to_string()
 

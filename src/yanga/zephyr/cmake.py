@@ -19,7 +19,8 @@ class ZephyrCMakeGenerator(CreateExecutableCMakeGenerator):
 
     @property
     def executable_target_name(self) -> str:
-        return "app"
+        # Zephyr's final ELF target: building it builds `app` and every Zephyr library linked into the firmware.
+        return "${logical_target_for_zephyr_elf}"
 
     def create_executable_elements(self, component_library_targets: list[str]) -> list[CMakeElement]:
         # Keyword form: Zephyr already used it on `app`, and CMake forbids mixing the two signatures.
