@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.42.1 (2026-11-06)
+
+### Bug fixes
+
+- Run the report after the variant is linked ([`60f704b`](https://github.com/yanga-project/yanga/commit/60f704b4bf5724312db250104b6ba1369152b927))
+
 ## v2.42.0 (2026-11-04)
 
 ### Features
