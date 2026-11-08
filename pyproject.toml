@@ -39,7 +39,7 @@ dependencies = [
   "py-app-dev>=2.20,<3",
   "pypeline-runner>=1.41,<2",
   "typer>=0,<1",
-  "yanga-core>=0.13.3,<1",
+  "yanga-core>=0.14,<1",
 ]
 
 optional-dependencies.zephyr = [
