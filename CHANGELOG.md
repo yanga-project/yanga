@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.43.0 (2026-11-08)
+
+### Features
+
+- Register reports for the spl overview ([`a8d114c`](https://github.com/yanga-project/yanga/commit/a8d114ceadf71ced54f7b1c3d4c048b28d0f8375))
+
 ## v2.42.1 (2026-11-06)
 
 ### Bug fixes

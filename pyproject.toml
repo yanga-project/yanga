@@ -5,7 +5,7 @@ requires = [ "poetry-core>=2,<3" ]
 
 [project]
 name = "yanga"
-version = "2.42.1"
+version = "2.43.0"
 description = "Yet another ninja generator to build C/CPP projects."
 readme = "README.md"
 license = { text = "MIT" }
