@@ -50,6 +50,6 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [
-          "yanga-core>=0.13.1,<1",
+          "yanga-core>=0.14,<1",
           "kspl>=1.10.1,<2",
         ]

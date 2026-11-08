@@ -4,6 +4,7 @@ import pytest
 from yanga_core.domain.component_resolver import ComponentResolver
 from yanga_core.domain.config import ComponentConfig, DocsConfig
 from yanga_core.domain.execution_context import ExecutionContext
+from yanga_core.domain.publish_manifest import PublishedFile, PublishKind
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
 
 from tests.utils import assert_element_of_type, assert_elements_of_type, find_elements_of_type
@@ -93,3 +94,9 @@ def test_exclude_productive_code(execution_context: ExecutionContext, output_dir
     assert_elements_of_type(
         report_relevant_files, ReportRelevantFiles, 1, lambda elem: elem.file_type == ReportRelevantFileType.SOURCES and elem.target.target_name == "CompB_docs"
     )
+
+
+def test_variant_report_is_registered_for_the_manifest(create_executable_generator: ReportCMakeGenerator, execution_context: ExecutionContext, output_dir: Path) -> None:
+    create_executable_generator.generate()
+
+    assert execution_context.data_registry.find_data(PublishedFile) == [PublishedFile(PublishKind.REPORT, "Variant report", output_dir / "reports/index.html")]

@@ -3,6 +3,7 @@ from typing import Any
 
 from yanga_core.docs.sphinx import SphinxConfig
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
+from yanga_core.domain.publish_manifest import PublishedFile, PublishKind
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
 
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
@@ -109,6 +110,10 @@ class ReportCMakeGenerator(CMakeGenerator):
                     results_target.name,
                 ],
             )
+        )
+        self.execution_context.data_registry.insert(
+            PublishedFile(PublishKind.REPORT, "Variant report", variant_report_dir.to_path() / "index.html"),
+            variant_report_target.target_name,
         )
         # sphinx-build populates the variant report dir with files unknown to ninja.
         # Register the directory for recursive removal on `clean`.

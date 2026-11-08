@@ -122,6 +122,8 @@ This generator orchestrates the creation of comprehensive HTML reports for both 
 * Static analysis reports (from `CppCheckCMakeGenerator`).
 * Coverage reports (from `GTestCMakeGenerator`) and test reports (from `SphinxTestReportCMakeGenerator`).
 
+It registers the variant report (`<variant build dir>/reports/index.html`) as a `PublishedFile` for the SPL overview, so a `WritePublishManifest` at the end of the build links it when the `report` target ran.
+
 **Use Case:** Generating detailed documentation and quality assurance reports.
 
 **Configuration:**
