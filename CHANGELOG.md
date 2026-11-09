@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.44.0 (2026-11-09)
+
+### Features
+
+- Add a generator that runs clang-tidy per source and writes a static analysis report ([`ccfcd70`](https://github.com/yanga-project/yanga/commit/ccfcd703e230118c44790647cbd4ec522d127e21))
+
 ## v2.43.0 (2026-11-08)
 
 ### Features
