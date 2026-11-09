@@ -3,6 +3,7 @@ from typing import Any
 
 from yanga_core.docs.sphinx import SphinxConfig
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
+from yanga_core.domain.generated_file import GeneratedFile
 from yanga_core.domain.publish_manifest import PublishedFile, PublishKind
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
 
@@ -174,11 +175,16 @@ class ReportCMakeGenerator(CMakeGenerator):
                     )
                 )
             if source_files_output_md:
-                # Register the component sources md files as relevant for the component report
+                # Only the Sources page goes in the component toctree; the pages it lists are built through all_files.
+                source_pages = [md_output.to_path() for md_output in source_files_output_md]
+                sources_page = component_build_dir.joinpath("sources.md").to_path()
+                toctree_entries = "\n".join(page.name for page in source_pages)
+                GeneratedFile(sources_page, f"# Sources\n\n```{{toctree}}\n:maxdepth: 1\n\n{toctree_entries}\n```\n").to_file()
                 self.execution_context.data_registry.insert(
                     ReportRelevantFiles(
                         target=component_docs_target,
-                        files_to_be_included=[md_output.to_path() for md_output in source_files_output_md],
+                        files_to_be_included=[sources_page],
+                        all_files=source_pages,
                         file_type=ReportRelevantFileType.SOURCES,
                     ),
                     component_docs_target.target_name,
