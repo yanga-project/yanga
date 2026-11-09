@@ -100,3 +100,17 @@ def test_variant_report_is_registered_for_the_manifest(create_executable_generat
     create_executable_generator.generate()
 
     assert execution_context.data_registry.find_data(PublishedFile) == [PublishedFile(PublishKind.REPORT, "Variant report", output_dir / "reports/index.html")]
+
+
+def test_source_pages_are_grouped_under_a_sources_page(execution_context: ExecutionContext, output_dir: Path) -> None:
+    configs = [ComponentConfig(name="CompB", path=Path("compB"), sources=["compB_source.cpp"])]
+    execution_context.components = ComponentResolver(configs, ["CompB"], execution_context.spl_paths).selected_components  # type: ignore[misc]
+
+    ReportCMakeGenerator(execution_context, output_dir).create_components_cmake_elements()
+
+    entry = assert_element_of_type(
+        execution_context.data_registry.find_data(ReportRelevantFiles), ReportRelevantFiles, lambda elem: elem.file_type == ReportRelevantFileType.SOURCES
+    )
+    assert [file.name for file in entry.files_to_be_included] == ["sources.md"]
+    assert [file.name for file in entry.all_files] == ["compB_source.cpp.md"]
+    assert entry.files_to_be_included[0].read_text() == "# Sources\n\n```{toctree}\n:maxdepth: 1\n\ncompB_source.cpp.md\n```\n"
