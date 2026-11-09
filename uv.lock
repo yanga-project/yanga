@@ -428,7 +428,7 @@ wheels = [
 
 [[package]]
 name = "clanguru"
-version = "0.16.0"
+version = "0.23.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
@@ -439,9 +439,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/e0/770902df78cb8513793bfccfe59592eb422a5cf39976f57ffb9331a2b7b3/clanguru-0.16.0.tar.gz", hash = "sha256:1141dff9c4ef124b1a6449b448872115321727a2ecda78e9549d9373b483ae4c", size = 39794, upload-time = "2026-01-29T06:39:09.469Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/a7/a5c3d7681136b7af544c3a446999d2308f89c99cfd260498ba0de6602874/clanguru-0.23.1.tar.gz", hash = "sha256:fe4ebd1c5dd8b8911a28101461c415e42182e806597f473933426bb4cd193041", size = 45160, upload-time = "2026-11-03T14:19:22.21Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/46/53d7604a68a920dd17af40790e4978ec44371f2031beb32813174d16e1b3/clanguru-0.16.0-py3-none-any.whl", hash = "sha256:c1622894c88a22a81dd98af943718fd4ded14d1cac18ed076aa0d7b3449a174f", size = 41177, upload-time = "2026-01-29T06:39:07.862Z" },
+    { url = "https://files.pythonhosted.org/packages/23/cf/63c4ffd0505412cfff52b18b613660a6d41cc9c924668ec0383472f5fc58/clanguru-0.23.1-py3-none-any.whl", hash = "sha256:b1d2ec87f1bba46b0e739909fb1f478352ad153e46f65da38c57fd227067e458", size = 46900, upload-time = "2026-11-03T14:19:20.885Z" },
 ]
 
 [[package]]
@@ -2868,7 +2868,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "clanguru", specifier = ">=0,<1" },
+    { name = "clanguru", specifier = ">=0.23.1,<1" },
     { name = "cookiecutter", specifier = ">=2.1,<3" },
     { name = "customtkinter", specifier = ">=5.2,<6" },
     { name = "gcovr", specifier = ">=8.3,<9" },

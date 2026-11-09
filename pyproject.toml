@@ -26,7 +26,7 @@ classifiers = [
   "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-  "clanguru>=0,<1",
+  "clanguru>=0.23.1,<1",
   "cookiecutter>=2.1,<3",
   "customtkinter>=5.2,<6",
   "gcovr>=8.3,<9",
