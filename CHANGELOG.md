@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.45.0 (2026-11-09)
+
+### Features
+
+- Group the source file pages under a sources page ([`e713c30`](https://github.com/yanga-project/yanga/commit/e713c30eadf85f86f780199e56b380c41cb856ae))
+
 ## v2.44.0 (2026-11-09)
 
 ### Features
