@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.45.1 (2026-11-13)
+
+### Bug fixes
+
+- Allow pillow up to version 13 ([`3c3f05f`](https://github.com/yanga-project/yanga/commit/3c3f05f93cb6612b2666a0517c26171ef2e820fb))
+
 ## v2.45.0 (2026-11-09)
 
 ### Features
