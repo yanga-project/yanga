@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.46.0 (2026-11-18)
+
+### Documentation
+
+- Close yanga-001 ([`e035c28`](https://github.com/yanga-project/yanga/commit/e035c28c3b981b2ee9715fec29b53986ac498b89))
+- Pull yanga-001 ([`a04a855`](https://github.com/yanga-project/yanga/commit/a04a855e77c4ed4462b1aa2044edd171baead92b))
+- Set up the backlog with yanga-001 ([`ab8951b`](https://github.com/yanga-project/yanga/commit/ab8951b0e0a6a35c67e1d33d2af8ba757fb74fd0))
+
+### Features
+
+- Link the source docs to the coverage lines (yanga-001) ([`28f8095`](https://github.com/yanga-project/yanga/commit/28f8095de02bb3263f58c163419e12648ed9cd78))
+
 ## v2.45.1 (2026-11-13)
 
 ### Bug fixes
