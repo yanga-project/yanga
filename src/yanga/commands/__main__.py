@@ -13,6 +13,7 @@ from yanga_core.commands.report_config import ReportConfigCommand
 from yanga import __version__
 from yanga.commands.clang_tidy import ClangCompileCommandsCommand, ClangTidyCommand, ClangTidyReportCommand
 from yanga.commands.gcovr import CreateComponentGcovrConfigCommand, CreateVariantGcovrConfigCommand
+from yanga.commands.source_links import ResolveSourceLinksCommand
 from yanga.commands.targets import TargetsDocCommand
 
 
@@ -31,6 +32,7 @@ def do_run() -> int:
             ReportConfigCommand(),
             CreateComponentGcovrConfigCommand(),
             CreateVariantGcovrConfigCommand(),
+            ResolveSourceLinksCommand(),
             TargetsDocCommand(),
         ]
     )

@@ -155,7 +155,7 @@ It registers the variant report (`<variant build dir>/reports/index.html`) as a 
 
 **Configuration:**
 
-This generator is typically added as a step without specific configuration.
+The generator needs no configuration. Add `source_links` to link the source docs to the coverage lines.
 
 ```yaml
 platforms:
@@ -165,7 +165,25 @@ platforms:
       # that produce reports (e.g., GTest, CppCheck).
       - step: ReportCMakeGenerator
         module: yanga.cmake.reports
+        config:
+          source_links: true
+          resolvers:
+            default: [gcovr]
+            local: [gcovr, vscode]
 ```
+
+* `source_links` (default `false`): calls `clanguru docs` with `--source-links` and `--project-root`, so the source docs contain `source:` links. The clanguru version must support `--source-links`. With `false`, the generated CMake does not change.
+* `resolvers`: named profiles with an ordered list of strategies each. `default` is required. `local` and `ci` are optional. For each link the first strategy that finds a target wins.
+* Without `resolvers`, no resolver runs and the links stay unresolved.
+
+Strategies:
+
+* `gcovr`: links to the line in the component coverage page (`coverage/<component>/index.html`) of the report, relative to the page. A file can be listed in several component trees, for example by an integration test component; rows with the same page name are the same file, and the tree of the component in the source path wins. If matching rows have different page names, it logs a warning and the link becomes plain text.
+* `vscode`: links to `vscode://file/<absolute path>:<line>`. It works only on the machine that built the report, so use it in a `local` profile.
+
+The profile is `ci` when the `CIContext` from the `CheckCIContext` step of pypeline-semantic-release says `is_ci`. Otherwise it is `local`, also when there is no `CIContext`. A profile that is not configured falls back to `default`.
+
+The links are resolved after `fix_html_links`. A link that no strategy resolves shows as plain text. The `conf.py` of the project must add `source` to `myst_url_schemes`.
 
 ## Auto-emitted targets
 

@@ -20,19 +20,27 @@ With CLG-016, `clanguru docs --source-links` writes a `[<path>:<line>](source:<p
 - **Resolver.** A yanga command, run right after `fix_html_links` in the component and variant report commands, finds every `source:` link in the finished HTML and replaces it with the URL its strategy returns, relative to the page's depth. A link it cannot resolve becomes plain text.
 - **Profiles.** `ReportCMakeGenerator`'s `config:` gets `resolvers`, a typed dataclass, the same way `GTestCMakeGenerator` takes its `mocking:` config: a dict of named profiles. `default` is required; `local` and `ci` are optional and replace `default` where they apply. Each value is an ordered list of strategies; for each link the first strategy that finds a target wins, and none means plain text. The structure must make more strategies and profiles easy to add.
 - **`switch` and `resolvers` are independent.** With `source_links` on and no `resolvers`, no resolver runs and the links stay unresolved in the report, which shows the missing config.
-- **Strategy `gcovr`.** Reads the file rows of every component coverage tree (`coverage/<component>/index.html`) in the report, never the variant tree. It takes the row whose shown name the source path ends with, on a path component boundary, and appends `#l<line>`. More than one matching row gives a warning and plain text.
+- **Strategy `gcovr`.** Reads the file rows of every component coverage tree (`coverage/<component>/index.html`) in the report, never the variant tree. It takes the row whose shown name the source path ends with, on a path component boundary, and appends `#l<line>`. Rows with the same page name are one file (an integration test component lists the production files it covers in its own tree); when such a file is in several trees, the tree named by the component of the source path wins (`components/light_controller/...` goes to `coverage/light_controller/`). Matching rows with different page names give a warning and plain text.
 - **Strategy `vscode`.** Writes `vscode://file/<absolute path>:<line>`. It only works on the machine that built the report, so it fits a `local` profile.
 - **CI or local.** The report generator reads the `CIContext` that pypeline-semantic-release's `CheckCIContext` step puts into the data registry: the profile is `ci` when it says `is_ci`, `local` otherwise, also when there is no `CIContext`. A profile that is not configured falls back to `default`. pypeline-semantic-release becomes a regular dependency.
 - Out of scope: a code host strategy for `ci`, yanga's kickstart template, folding `fix_html_links`' `#http://` marker into the resolver.
 
 ## Acceptance criteria
 
-- [ ] With `source_links` off, the report commands write the same CMake as before
-- [ ] With `source_links` on, `clanguru docs` is called with `--source-links` and `--project-root` for production and test sources
-- [ ] Under a profile `[gcovr]`, a `source:` link to a covered file becomes a relative link to its coverage page with `#l<line>`
-- [ ] A link no strategy resolves becomes plain text
-- [ ] Two coverage rows that both match a source path give a warning, and the link becomes plain text
-- [ ] Under a profile `[gcovr, vscode]`, a link to a file gcovr does not cover becomes `vscode://file/<absolute path>:<line>`
-- [ ] The profile is `ci` with a `CIContext` that says `is_ci`, `local` otherwise, and a missing profile falls back to `default`
-- [ ] The source links option and the resolver profiles are documented in yanga's docs
-- [ ] `pypeline run` is green
+- [x] With `source_links` off, the report commands write the same CMake as before
+- [x] With `source_links` on, `clanguru docs` is called with `--source-links` and `--project-root` for production and test sources
+- [x] Under a profile `[gcovr]`, a `source:` link to a covered file becomes a relative link to its coverage page with `#l<line>`
+- [x] A link no strategy resolves becomes plain text
+- [x] Two coverage rows with different page names that both match a source path give a warning, and the link becomes plain text; rows with the same page name are one file, resolved to the tree of the source path's component
+- [x] Under a profile `[gcovr, vscode]`, a link to a file gcovr does not cover becomes `vscode://file/<absolute path>:<line>`
+- [x] The profile is `ci` with a `CIContext` that says `is_ci`, `local` otherwise, and a missing profile falls back to `default`
+- [x] The source links option and the resolver profiles are documented in yanga's docs
+- [x] `pypeline run` is green
+
+## Handoff
+
+- Intent: `ReportCMakeGenerator` takes `source_links` and `resolvers` in its `config:`. With `source_links` on, `clanguru docs` gets `--source-links --project-root <project root>`; with `resolvers` set too, `yanga_cmd resolve_source_links --report-dir <dir> --project-root <dir> --strategies ...` runs after `fix_html_links` in the component and variant report targets.
+- Verified: `pypeline run` exit 0 in the worktree on macOS (it puts clanguru 0.23.1 back from `uv.lock`); then `.venv/bin/pytest` with clanguru from the CLG-016 worktree installed editable: 163 passed, 3 skipped. After SPLED-001, the gcovr strategy treats rows with the same page name as one file and prefers the tree of the source path's component (`test_gcovr_same_page_in_several_trees_goes_to_the_component_tree`, row markup from the SPLed Disco gtest report). Tests: `tests/test_source_links_command.py`, `tests/test_cmake_reports.py` (`source_links` and `resolver` tests). `jarvis floor-guard` clean.
+- State: every acceptance criterion ticked; branch `feat/yanga-001-source-links`, waiting for integration and the publisher.
+- Next step: SPLED-001 sets `source_links: true` and `resolvers: {default: [gcovr], local: [gcovr, vscode]}` in its gtest platform, adds `source` to `myst_url_schemes` and runs `CheckCIContext` before `GenerateBuildSystemFiles`. Resolver: `src/yanga/commands/source_links.py`; config: `src/yanga/cmake/reports.py`; docs: `docs/reference/cmake.md`.
+- Known problems: yanga's `clanguru>=0.23.1` floor must be raised to the release that has `--source-links` once CLG-016 is published. Not tried against a built SPLed report yet; the gcovr row markup was checked against gcovr 8.6's template.
