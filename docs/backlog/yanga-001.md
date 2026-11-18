@@ -1,5 +1,5 @@
 ---
-status: In Progress
+status: Done (2026-11-18)
 priority: Medium
 blocked_by: [CLG-016]
 ---
@@ -36,11 +36,3 @@ With CLG-016, `clanguru docs --source-links` writes a `[<path>:<line>](source:<p
 - [x] The profile is `ci` with a `CIContext` that says `is_ci`, `local` otherwise, and a missing profile falls back to `default`
 - [x] The source links option and the resolver profiles are documented in yanga's docs
 - [x] `pypeline run` is green
-
-## Handoff
-
-- Intent: `ReportCMakeGenerator` takes `source_links` and `resolvers` in its `config:`. With `source_links` on, `clanguru docs` gets `--source-links --project-root <project root>`; with `resolvers` set too, `yanga_cmd resolve_source_links --report-dir <dir> --project-root <dir> --strategies ...` runs after `fix_html_links` in the component and variant report targets.
-- Verified: `pypeline run` exit 0 in the worktree on macOS (it puts clanguru 0.23.1 back from `uv.lock`); then `.venv/bin/pytest` with clanguru from the CLG-016 worktree installed editable: 163 passed, 3 skipped. After SPLED-001, the gcovr strategy treats rows with the same page name as one file and prefers the tree of the source path's component (`test_gcovr_same_page_in_several_trees_goes_to_the_component_tree`, row markup from the SPLed Disco gtest report). Tests: `tests/test_source_links_command.py`, `tests/test_cmake_reports.py` (`source_links` and `resolver` tests). `jarvis floor-guard` clean.
-- State: every acceptance criterion ticked; branch `feat/yanga-001-source-links`, waiting for integration and the publisher.
-- Next step: SPLED-001 sets `source_links: true` and `resolvers: {default: [gcovr], local: [gcovr, vscode]}` in its gtest platform, adds `source` to `myst_url_schemes` and runs `CheckCIContext` before `GenerateBuildSystemFiles`. Resolver: `src/yanga/commands/source_links.py`; config: `src/yanga/cmake/reports.py`; docs: `docs/reference/cmake.md`.
-- Known problems: yanga's `clanguru>=0.23.1` floor must be raised to the release that has `--source-links` once CLG-016 is published. Not tried against a built SPLed report yet; the gcovr row markup was checked against gcovr 8.6's template.

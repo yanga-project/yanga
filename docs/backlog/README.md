@@ -10,8 +10,6 @@
 
 ### In Progress
 
-- [YANGA-001 — Resolve source links in the reports](yanga-001.md)
-
 ### Blocked
 
 ### Ready
