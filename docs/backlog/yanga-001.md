@@ -1,5 +1,5 @@
 ---
-status: Ready
+status: In Progress
 priority: Medium
 blocked_by: [CLG-016]
 ---
