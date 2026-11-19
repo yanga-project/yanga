@@ -50,7 +50,7 @@ The objects linked into a shared library must be position independent; set `CMAK
 
 ## `GTestCMakeGenerator`
 
-This generator facilitates unit testing using the Google Test framework. For each testable component, it builds a separate test executable. It also includes a powerful auto-mocking feature that uses [clanguru](https://github.com/cuinixam/clanguru) to generate mocks for dependencies, isolating the component under test.
+This generator facilitates unit testing using the Google Test framework. For each component with a `gtest` testing block, it builds a separate test executable from that block's `sources` and `mockup_sources`; blocks of other frameworks are ignored. It also includes a powerful auto-mocking feature that uses [clanguru](https://github.com/cuinixam/clanguru) to generate mocks for dependencies, isolating the component under test.
 
 **Use Case:** Running unit tests and generating coverage reports for individual components.
 
@@ -66,7 +66,7 @@ platforms:
         module: yanga.cmake.gtest
         config:
           # Enable/disable auto-mocking for all components.
-          # This can be overridden in each component's 'testing' section.
+          # This can be overridden in the 'config.mocking' of each component's gtest testing block.
           mocking:
             enabled: true
             strict: false # If true, clanguru parsing errors are fatal.

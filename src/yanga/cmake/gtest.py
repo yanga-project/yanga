@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -10,7 +10,7 @@ from py_app_dev.core.exceptions import UserNotificationException
 from pypeline.domain.external_project import ExternalProject
 from yanga_core.domain.artifact import Artifact, collect_directories, filter_artifacts, for_consumer, with_label
 from yanga_core.domain.component_resolver import resolve_include_directories
-from yanga_core.domain.components import Component
+from yanga_core.domain.components import Component, TestingBlock
 from yanga_core.domain.config import MockingConfig
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType, ReportRelevantHtmlContent
@@ -39,6 +39,12 @@ from .cmake_backend import (
     cmake_directory_provider,
 )
 from .generator import CMakeGenerator
+
+GTEST_FRAMEWORK = "gtest"
+
+
+def gtest_block(component: Component) -> TestingBlock | None:
+    return next((block for block in component.testing if block.framework == GTEST_FRAMEWORK), None)
 
 
 class GTestCMakeArtifactsLocator(CMakeArtifactsLocator):
@@ -98,7 +104,7 @@ class GTestCMakeComponent:
         return f"{self.component.name}_PC"
 
     def is_testable(self) -> bool:
-        return self.component.is_testable
+        return self.component.is_testable(GTEST_FRAMEWORK)
 
     def get_include_directories(self) -> list[CMakePath]:
         registry_dirs = collect_directories(filter_artifacts(self.execution_context.data_registry.find_data(Artifact), with_label("include"), for_consumer(self.component.name)))
@@ -113,11 +119,14 @@ class CMakeMockupCreator:
         component_object_library_target: str,
         artifacts_locator: GTestCMakeArtifactsLocator,
         mocking_config: MockingConfig | None,
+        mockup_library_target: str | None = None,
     ):
         self.artifacts_locator = artifacts_locator
         self.gtest_cmake_component = gtest_cmake_component
         self.mocking_config = mocking_config
         self.component_object_library_target = component_object_library_target
+        # Linked into the partial object so clanguru does not mock the symbols the mockups define.
+        self.object_library_targets = [component_object_library_target, *([mockup_library_target] if mockup_library_target else [])]
 
     def generate(self) -> list[CMakeElement]:
         elements: list[CMakeElement] = []
@@ -130,7 +139,7 @@ class CMakeMockupCreator:
         custom_command = CMakeCustomCommand(
             description="Create partial link library containing only the productive sources",
             outputs=[partial_link_obj],
-            depends=[self.component_object_library_target],
+            depends=list(self.object_library_targets),
             commands=[
                 CMakeCommand(
                     "${CMAKE_CXX_COMPILER}",
@@ -139,7 +148,7 @@ class CMakeMockupCreator:
                         "-nostdlib",
                         "-o",
                         partial_link_obj,
-                        f"$<TARGET_OBJECTS:{self.component_object_library_target}>",
+                        *[f"$<TARGET_OBJECTS:{target}>" for target in self.object_library_targets],
                     ],
                 )
             ],
@@ -211,7 +220,8 @@ class GTestComponentCMakeGenerator:
         self.config = config
 
     def generate(self, component: Component) -> list[CMakeElement]:
-        component_generator_config = self._determine_component_generator_config(component)
+        testing_block = gtest_block(component)
+        component_generator_config = self._determine_component_generator_config(testing_block)
 
         component_build_dir = self.artifacts_locator.get_component_build_dir(component.name)
         gtest_cmake_component = GTestCMakeComponent(component, self.execution_context)
@@ -246,20 +256,30 @@ class GTestComponentCMakeGenerator:
             target_includes = CMakeTargetIncludeDirectories(component_sources_object_library.target_name, include_dirs, scope)
             elements.append(target_includes)
 
-        mockup_generator = None
-        if component_generator_config.automock:
-            mockup_generator = CMakeMockupCreator(
-                gtest_cmake_component,
-                component_sources_object_library.target_name,
-                self.artifacts_locator,
-                component_generator_config.mocking,
-            )
+        # Components without gtest tests will just be compiled
+        if testing_block and gtest_cmake_component.is_testable():
+            mockup_library = None
+            if testing_block.mockup_sources:
+                mockup_library = self.add_mockup_library(f"{component.name}_mockups", testing_block.mockup_sources, component.name)
+                elements.append(mockup_library)
+                if include_dirs and not component_generator_config.use_global_includes:
+                    elements.append(CMakeTargetIncludeDirectories(mockup_library.target_name, include_dirs, IncludeScope.PRIVATE))
 
-        # Components without tests will just be compiled
-        if component.is_testable:
-            # A new list: the mockups belong to the executable, not to the component test sources the report shows.
-            all_sources = component.test_sources + (mockup_generator.get_mockup_sources() if mockup_generator else [])
+            mockup_generator = None
+            if component_generator_config.automock:
+                mockup_generator = CMakeMockupCreator(
+                    gtest_cmake_component,
+                    component_sources_object_library.target_name,
+                    self.artifacts_locator,
+                    component_generator_config.mocking,
+                    mockup_library.target_name if mockup_library else None,
+                )
+
+            # A new list: the generated mocks belong to the executable, not to the test sources the report shows.
+            all_sources = testing_block.sources + (mockup_generator.get_mockup_sources() if mockup_generator else [])
             test_executable = self.add_executable(gtest_cmake_component.executable_name, all_sources, component_sources_object_library.target_name, component.name)
+            if mockup_library:
+                test_executable.libraries.append(mockup_library.target_name)
             elements.append(test_executable)
 
             # Set the executable output directory to the component-specific directory
@@ -280,7 +300,11 @@ class GTestComponentCMakeGenerator:
             # Register the JUnit report for the generators that render it (e.g. SphinxTestReportCMakeGenerator)
             component_test_target = UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=UserRequestTarget.TEST)
             self.execution_context.data_registry.insert(
-                TestResultFile(target=component_test_target, junit_report=self.artifacts_locator.get_component_build_dir(component.name).joinpath(f"{component.name}_junit.xml")),
+                TestResultFile(
+                    target=component_test_target,
+                    junit_report=self.artifacts_locator.get_component_build_dir(component.name).joinpath(f"{component.name}_junit.xml"),
+                    test_sources=testing_block.sources,
+                ),
                 component_test_target.target_name,
             )
 
@@ -368,20 +392,21 @@ class GTestComponentCMakeGenerator:
         """Test targets of the testable subcomponents, recursively, so running a container's tests runs theirs too."""
         targets: list[str] = []
         for subcomponent in component.subcomponents:
-            if subcomponent.is_testable:
+            if subcomponent.is_testable(GTEST_FRAMEWORK):
                 targets.append(UserRequest(UserRequestScope.COMPONENT, component_name=subcomponent.name, target=UserRequestTarget.TEST).target_name)
             targets.extend(self._subcomponent_test_targets(subcomponent))
         return targets
 
-    def _determine_component_generator_config(self, component: Component) -> GTestCMakeGeneratorConfig:
-        """Take over the component mocking configuration over the global generator configuration."""
-        result = self.config
-        if component.testing and component.testing.mocking:
-            if not result.mocking:
-                result.mocking = component.testing.mocking
-            else:
-                result.mocking = merge_configs(result.mocking, component.testing.mocking)
-        return result
+    def _determine_component_generator_config(self, testing_block: TestingBlock | None) -> GTestCMakeGeneratorConfig:
+        """Merge the block's ``config.mocking`` over the platform mocking into a new config; the shared generator config stays untouched."""
+        if not (testing_block and testing_block.config.get("mocking")):
+            return self.config
+        block_mocking = MockingConfig.from_dict(testing_block.config["mocking"])
+        return replace(self.config, mocking=merge_configs(self.config.mocking, block_mocking) if self.config.mocking else block_mocking)
+
+    def add_mockup_library(self, name: str, mockup_sources: list[Path], component_name: str) -> CMakeAddLibrary:
+        """Test-only helper sources: compiled without coverage, linked into the test executable."""
+        return CMakeAddLibrary(name=name, files=mockup_sources, compile_options=["-ggdb"], component_name=component_name)
 
     def add_executable(self, executable_name: str, sources: list[Path], component_object_library: str, component_name: str) -> CMakeAddExecutable:
         return CMakeAddExecutable(

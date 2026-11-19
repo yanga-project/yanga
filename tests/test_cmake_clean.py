@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 from py_app_dev.core.exceptions import UserNotificationException
 from yanga_core.domain.components import Component
-from yanga_core.domain.config import TestingConfig
 from yanga_core.domain.execution_context import ExecutionContext
 
 from yanga.cmake.builder import CMakeBuildSystemGenerator
@@ -86,7 +85,7 @@ def test_clean_target_ignores_untagged_targets_and_other_components(execution_co
 def test_rejects_component_names_resolving_to_or_escaping_build_root(bad_name: str, execution_context: ExecutionContext, output_dir: Path) -> None:
     # Override the mock's read-only components; only the (bad) name matters here.
     execution_context.components = [  # type: ignore[misc]
-        Component(name=bad_name, path=Path("evil"), sources=[Path("evil.cpp")], testing=TestingConfig(sources=[])),
+        Component(name=bad_name, path=Path("evil"), sources=[Path("evil.cpp")], testing=[]),
     ]
 
     with pytest.raises(UserNotificationException, match="resolves to or escapes cmake build root"):

@@ -6,7 +6,7 @@ A C project built with the [Yanga](https://github.com/yanga-project/yanga) build
 
 ## Architecture
 
-- **Components** (`src/`) are reusable C modules declared in `src/yanga.yaml` with sources, tests (`testing.sources`) and docs (`docs_sources`).
+- **Components** (`src/`) are reusable C modules declared in `src/yanga.yaml` with sources, tests (one `testing` block per framework, e.g. `framework: gtest`) and docs (`docs_sources`).
 - **Variants** (`src/yanga.yaml`) combine components and optionally select features via a `feature_selection:` block (KConfig `config_*.txt`).
 - **Platforms** (`platforms/`) define build targets, CMake generators and toolchain files.
 - **Feature model** (`KConfig`) declares the available features. `KConfigGen` turns the variant's selection into generated headers.

@@ -17,10 +17,12 @@ components:
     docs_sources:
       - greeter.md
     testing:
-      sources:
-        - greeter_test.cc
-      mocking:
-        strict: false
+      - framework: gtest
+        sources:
+          - greeter_test.cc
+        config:
+          mocking:
+            strict: false
 
 variants:
   - name: EnglishVariant

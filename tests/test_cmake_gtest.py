@@ -4,10 +4,11 @@ import pytest
 from py_app_dev.core.data_registry import DataRegistry
 from py_app_dev.core.exceptions import UserNotificationException
 from pypeline.domain.external_project import ExternalProject
-from yanga_core.domain.components import Component
-from yanga_core.domain.config import MockingConfig, TestingConfig
+from yanga_core.domain.components import Component, TestingBlock
+from yanga_core.domain.config import ComponentConfig, MockingConfig, TestingBlockConfig
 from yanga_core.domain.execution_context import ExecutionContext
 
+from tests.conftest import make_execution_context
 from tests.utils import assert_element_of_type, assert_elements_of_type, find_elements_of_type
 from yanga.cmake.cmake_backend import (
     CMakeAddExecutable,
@@ -311,22 +312,106 @@ def test_executable_output_directory_is_set(execution_context: ExecutionContext,
     assert "CompA" in runtime_dir, f"Component subdirectory not found in runtime output directory: {runtime_dir}"
 
 
+def make_gtest_context(tmp_path: Path, configs: list[ComponentConfig]) -> ExecutionContext:
+    execution_context = make_execution_context(tmp_path, configs)
+    execution_context.data_registry.insert(ExternalProject(name="googletest", revision="v1.17.0", path=Path("ext/gtest/v1.17.0")), provider="WestInstall")
+    return execution_context
+
+
+def comp_a_config(*testing: TestingBlockConfig) -> ComponentConfig:
+    return ComponentConfig(name="CompA", path=Path("compA"), sources=["compA.c"], testing=list(testing))
+
+
+GTEST_AND_TESSY = (TestingBlockConfig(framework="gtest", sources=["test_gtest.cc"]), TestingBlockConfig(framework="tessy", sources=["test_tessy.c"]))
+
+
+def test_only_the_gtest_block_is_built(tmp_path: Path, output_dir: Path) -> None:
+    elements = GTestCMakeGenerator(make_gtest_context(tmp_path, [comp_a_config(*GTEST_AND_TESSY)]), output_dir).generate()
+
+    executable = assert_element_of_type(elements, CMakeAddExecutable)
+    assert [Path(str(source)).name for source in executable.sources] == ["test_gtest.cc", "mockup_CompA.cc"]
+
+
+@pytest.mark.parametrize(
+    "testing",
+    [
+        [TestingBlockConfig(framework="tessy", sources=["test_tessy.c"])],
+        [TestingBlockConfig(framework="gtest", mockup_sources=["fake_os.c"])],
+    ],
+)
+def test_component_without_gtest_sources_is_only_compiled(tmp_path: Path, output_dir: Path, testing: list[TestingBlockConfig]) -> None:
+    elements = GTestCMakeGenerator(make_gtest_context(tmp_path, [comp_a_config(*testing)]), output_dir).generate()
+
+    assert [library.name for library in find_elements_of_type(elements, CMakeAddLibrary)] == ["CompA_PC"]
+    assert find_elements_of_type(elements, CMakeAddExecutable) == []
+    assert {target.name for target in find_elements_of_type(elements, CMakeCustomTarget)} == {"coverage"}
+
+
+def test_test_result_carries_the_gtest_sources(tmp_path: Path, output_dir: Path) -> None:
+    execution_context = make_gtest_context(tmp_path, [comp_a_config(*GTEST_AND_TESSY)])
+
+    GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    [test_result] = execution_context.data_registry.find_data(TestResultFile)
+    assert test_result.test_sources == [tmp_path / "compA" / "test_gtest.cc"]
+
+
 def test_component_mocking_config_overrides_global(execution_context: ExecutionContext, output_dir: Path) -> None:
-    global_mocking_config = GTestCMakeGeneratorConfig.from_dict({"mocking": {"enabled": True, "exclude_symbol_patterns": ["GlobalPattern1", "GlobalPattern2"], "strict": False}})
-    component = Component(
-        name="CompA",
-        path=Path("CompA"),
-        sources=[],
-        testing=TestingConfig(sources=["test_compA_source.cpp"], mocking=MockingConfig(exclude_symbol_patterns=["CompAPattern1"], strict=True)),
-    )
-    generator = GTestComponentCMakeGenerator(execution_context, output_dir, global_mocking_config)
+    platform_config = GTestCMakeGeneratorConfig.from_dict({"mocking": {"enabled": True, "exclude_symbol_patterns": ["GlobalPattern1", "GlobalPattern2"], "strict": False}})
+    platform_mocking = MockingConfig(enabled=True, exclude_symbol_patterns=["GlobalPattern1", "GlobalPattern2"], strict=False)
+    block = TestingBlock(framework="gtest", sources=[Path("test_compA_source.cpp")], config={"mocking": {"exclude_symbol_patterns": ["CompAPattern1"], "strict": True}})
+    generator = GTestComponentCMakeGenerator(execution_context, output_dir, platform_config)
 
-    config = generator._determine_component_generator_config(component)
+    config = generator._determine_component_generator_config(block)
 
-    assert config.mocking is not None
-    assert config.mocking.enabled is True, "Inherited global mocking enabled"
-    assert config.mocking.exclude_symbol_patterns == ["CompAPattern1"], "Overridden exclude patterns"
-    assert config.mocking.strict is True, "Overridden strict setting"
+    assert config.mocking == MockingConfig(enabled=True, exclude_symbol_patterns=["CompAPattern1"], strict=True)
+    assert generator._determine_component_generator_config(None).mocking == platform_mocking
+    assert generator.config.mocking == platform_mocking
+
+
+def test_block_mocking_does_not_leak_into_the_next_component(tmp_path: Path, output_dir: Path) -> None:
+    configs = [
+        ComponentConfig(
+            name="CompA", path=Path("compA"), sources=["a.c"], testing=[TestingBlockConfig(framework="gtest", sources=["test_a.cc"], config={"mocking": {"strict": True}})]
+        ),
+        ComponentConfig(name="CompB", path=Path("compB"), sources=["b.c"], testing=[TestingBlockConfig(framework="gtest", sources=["test_b.cc"])]),
+    ]
+
+    elements = GTestCMakeGenerator(make_gtest_context(tmp_path, configs), output_dir, {"mocking": {"strict": False}}).generate()
+
+    arguments = [[str(arg) for arg in cmd.commands[0].arguments] for cmd in find_elements_of_type(elements, CMakeCustomCommand) if cmd.description.startswith("Run clanguru")]
+    strictness = {args[args.index("--filename") + 1]: "--strict" in args for args in arguments}
+    assert strictness == {"mockup_CompA": True, "mockup_CompB": False}
+
+
+def generate_with_mockups(tmp_path: Path, output_dir: Path, automock: bool) -> list[CMakeElement]:
+    testing = TestingBlockConfig(framework="gtest", sources=["test_compA.cc"], mockup_sources=["fake_os.c"])
+    return GTestCMakeGenerator(make_gtest_context(tmp_path, [comp_a_config(testing)]), output_dir, {"mocking": {"enabled": automock}}).generate()
+
+
+@pytest.mark.parametrize("automock", [True, False])
+def test_mockup_sources_are_built_without_coverage_and_linked(tmp_path: Path, output_dir: Path, automock: bool) -> None:
+    elements = generate_with_mockups(tmp_path, output_dir, automock)
+
+    library = assert_element_of_type(elements, CMakeAddLibrary, lambda lib: lib.name == "CompA_mockups")
+    assert library.target_name == "CompA_mockups_lib"
+    assert library.files == [tmp_path / "compA" / "fake_os.c"]
+    assert "-ggdb" in library.compile_options
+    assert "--coverage" not in library.compile_options
+    assert library.component_name == "CompA"
+    executable = assert_element_of_type(elements, CMakeAddExecutable)
+    assert "CompA_mockups_lib" in executable.libraries
+    assert "fake_os.c" not in [Path(str(source)).name for source in executable.sources]
+    partial_links = [cmd for cmd in find_elements_of_type(elements, CMakeCustomCommand) if cmd.description.startswith("Create partial link library")]
+    assert len(partial_links) == automock
+
+
+def test_partial_link_takes_the_mockup_objects(tmp_path: Path, output_dir: Path) -> None:
+    elements = generate_with_mockups(tmp_path, output_dir, automock=True)
+
+    partial_link = assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: cmd.description.startswith("Create partial link library"))
+    assert {"$<TARGET_OBJECTS:CompA_PC_lib>", "$<TARGET_OBJECTS:CompA_mockups_lib>"} <= {str(arg) for arg in partial_link.commands[0].arguments}
+    assert {"CompA_PC_lib", "CompA_mockups_lib"} <= {str(depend) for depend in partial_link.depends or []}
 
 
 @pytest.fixture
