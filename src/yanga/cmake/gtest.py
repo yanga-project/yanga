@@ -9,7 +9,7 @@ from py_app_dev.core.config import merge_configs
 from py_app_dev.core.exceptions import UserNotificationException
 from pypeline.domain.external_project import ExternalProject
 from yanga_core.domain.artifact import Artifact, collect_directories, filter_artifacts, for_consumer, with_label
-from yanga_core.domain.component_resolver import resolve_include_directories
+from yanga_core.domain.component_resolver import find_testing_block, resolve_include_directories
 from yanga_core.domain.components import Component, TestingBlock
 from yanga_core.domain.config import MockingConfig
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
@@ -41,10 +41,7 @@ from .cmake_backend import (
 from .generator import CMakeGenerator
 
 GTEST_FRAMEWORK = "gtest"
-
-
-def gtest_block(component: Component) -> TestingBlock | None:
-    return next((block for block in component.testing if block.framework == GTEST_FRAMEWORK), None)
+VARIANT_TEST_NAME = "variant_test"
 
 
 class GTestCMakeArtifactsLocator(CMakeArtifactsLocator):
@@ -113,29 +110,34 @@ class GTestCMakeComponent:
 
 
 class CMakeMockupCreator:
+    """Mock what the partial link of ``object_library_targets`` leaves undefined, for one component or the whole variant."""
+
     def __init__(
         self,
-        gtest_cmake_component: GTestCMakeComponent,
-        component_object_library_target: str,
+        name: str,
+        sources: list[Path],
+        build_dir: CMakePath,
+        object_library_targets: list[str],
+        mockup_target_name: str,
         artifacts_locator: GTestCMakeArtifactsLocator,
         mocking_config: MockingConfig | None,
-        mockup_library_target: str | None = None,
     ):
+        self.name = name
+        self.sources = sources
+        self.build_dir = build_dir
+        # Mockup library objects belong here too, so clanguru does not mock the symbols the mockups define.
+        self.object_library_targets = object_library_targets
+        self.mockup_target_name = mockup_target_name
         self.artifacts_locator = artifacts_locator
-        self.gtest_cmake_component = gtest_cmake_component
         self.mocking_config = mocking_config
-        self.component_object_library_target = component_object_library_target
-        # Linked into the partial object so clanguru does not mock the symbols the mockups define.
-        self.object_library_targets = [component_object_library_target, *([mockup_library_target] if mockup_library_target else [])]
 
     def generate(self) -> list[CMakeElement]:
         elements: list[CMakeElement] = []
         # Create the partial link library containing only the productive sources to be able to find the required mocks
-        sources = [CMakePath(source) for source in self.gtest_cmake_component.component.sources]
-        # Add the component-specific build directory for the component to find the generated mockup sources
-        component_build_dir = self.artifacts_locator.get_component_build_dir(self.gtest_cmake_component.name)
+        sources = [CMakePath(source) for source in self.sources]
+        component_build_dir = self.build_dir
         # Custom command to create the partial link library
-        partial_link_obj = component_build_dir.joinpath(f"{self.gtest_cmake_component.partial_link_name}.o")
+        partial_link_obj = component_build_dir.joinpath(f"{self.name}_PC.o")
         custom_command = CMakeCustomCommand(
             description="Create partial link library containing only the productive sources",
             outputs=[partial_link_obj],
@@ -165,7 +167,7 @@ class CMakeMockupCreator:
 
         generate_mockup_cmake_cmd = CMakeCustomCommand(
             description="Run clanguru to generate mockup sources",
-            outputs=[CMakePath(file) for file in self.get_mockup_generated_files()],
+            outputs=self.get_mockup_generated_files(),
             depends=[partial_link_obj],
             commands=[
                 CMakeCommand(
@@ -173,7 +175,7 @@ class CMakeMockupCreator:
                     [
                         "mock",
                         "--filename",
-                        f"mockup_{self.gtest_cmake_component.component.name}",
+                        f"mockup_{self.name}",
                         *[f"--source-file {source}" for source in sources],
                         "--partial-object-file",
                         partial_link_obj,
@@ -190,27 +192,22 @@ class CMakeMockupCreator:
         # Add custom target for the mockup generation
         elements.append(
             CMakeCustomTarget(
-                UserRequest(
-                    UserRequestScope.COMPONENT,
-                    component_name=self.gtest_cmake_component.name,
-                    target=UserRequestTarget.MOCKUP,
-                ).target_name,
-                f"Generate mockup sources for {self.gtest_cmake_component.name}",
+                self.mockup_target_name,
+                f"Generate mockup sources for {self.name}",
                 [],
                 generate_mockup_cmake_cmd.outputs,
             )
         )
         return elements
 
-    def get_mockup_generated_files(self) -> list[Path]:
+    def get_mockup_generated_files(self) -> list[CMakePath]:
         return [self.get_mockup_file("log"), self.get_mockup_file("h"), *self.get_mockup_sources()]
 
-    def get_mockup_sources(self) -> list[Path]:
+    def get_mockup_sources(self) -> list[CMakePath]:
         return [self.get_mockup_file("cc")]
 
-    def get_mockup_file(self, file_extension: str) -> Path:
-        component_build_dir = self.artifacts_locator.get_component_build_dir(self.gtest_cmake_component.name)
-        return component_build_dir.joinpath(f"mockup_{self.gtest_cmake_component.name}.{file_extension}").to_path()
+    def get_mockup_file(self, file_extension: str) -> CMakePath:
+        return self.build_dir.joinpath(f"mockup_{self.name}.{file_extension}")
 
 
 class GTestComponentCMakeGenerator:
@@ -220,7 +217,7 @@ class GTestComponentCMakeGenerator:
         self.config = config
 
     def generate(self, component: Component) -> list[CMakeElement]:
-        testing_block = gtest_block(component)
+        testing_block = find_testing_block(component.testing, GTEST_FRAMEWORK)
         component_generator_config = self._determine_component_generator_config(testing_block)
 
         component_build_dir = self.artifacts_locator.get_component_build_dir(component.name)
@@ -268,16 +265,18 @@ class GTestComponentCMakeGenerator:
             mockup_generator = None
             if component_generator_config.automock:
                 mockup_generator = CMakeMockupCreator(
-                    gtest_cmake_component,
-                    component_sources_object_library.target_name,
+                    component.name,
+                    component.sources,
+                    component_build_dir,
+                    [component_sources_object_library.target_name, *([mockup_library.target_name] if mockup_library else [])],
+                    UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=UserRequestTarget.MOCKUP).target_name,
                     self.artifacts_locator,
                     component_generator_config.mocking,
-                    mockup_library.target_name if mockup_library else None,
                 )
 
             # A new list: the generated mocks belong to the executable, not to the test sources the report shows.
-            all_sources = testing_block.sources + (mockup_generator.get_mockup_sources() if mockup_generator else [])
-            test_executable = self.add_executable(gtest_cmake_component.executable_name, all_sources, component_sources_object_library.target_name, component.name)
+            all_sources = [*testing_block.sources, *(source.to_path() for source in (mockup_generator.get_mockup_sources() if mockup_generator else []))]
+            test_executable = self.add_executable(gtest_cmake_component.executable_name, all_sources, [component_sources_object_library.target_name], component.name)
             if mockup_library:
                 test_executable.libraries.append(mockup_library.target_name)
             elements.append(test_executable)
@@ -404,15 +403,15 @@ class GTestComponentCMakeGenerator:
         block_mocking = MockingConfig.from_dict(testing_block.config["mocking"])
         return replace(self.config, mocking=merge_configs(self.config.mocking, block_mocking) if self.config.mocking else block_mocking)
 
-    def add_mockup_library(self, name: str, mockup_sources: list[Path], component_name: str) -> CMakeAddLibrary:
+    def add_mockup_library(self, name: str, mockup_sources: list[Path], component_name: str | None) -> CMakeAddLibrary:
         """Test-only helper sources: compiled without coverage, linked into the test executable."""
         return CMakeAddLibrary(name=name, files=mockup_sources, compile_options=["-ggdb"], component_name=component_name)
 
-    def add_executable(self, executable_name: str, sources: list[Path], component_object_library: str, component_name: str) -> CMakeAddExecutable:
+    def add_executable(self, executable_name: str, sources: Sequence[Path | CMakePath], object_libraries: list[str], component_name: str | None) -> CMakeAddExecutable:
         return CMakeAddExecutable(
             name=executable_name,
-            sources=[CMakePath(source) for source in sources],
-            libraries=["GTest::gtest_main", "GTest::gmock_main", "pthread", component_object_library],
+            sources=[source if isinstance(source, CMakePath) else CMakePath(source) for source in sources],
+            libraries=["GTest::gtest_main", "GTest::gmock_main", "pthread", *object_libraries],
             compile_options=[
                 "-ggdb",  # Include detailed debug information to be able to debug the executable.
             ],
@@ -532,6 +531,7 @@ class GTestCMakeGenerator(CMakeGenerator):
         elements.append(CMakeComment(f"Generated by {self.__class__.__name__}"))
         elements.extend(self.create_gtest_integration_cmake_elements())
         elements.extend(self.create_components_cmake_elements())
+        elements.extend(self.create_variant_test_cmake_elements())
         elements.extend(self.create_variant_cmake_elements())
         return elements
 
@@ -571,6 +571,154 @@ class GTestCMakeGenerator(CMakeGenerator):
         for component in self.execution_context.components:
             elements.extend(component_generator.generate(component))
         return elements
+
+    def create_variant_test_cmake_elements(self) -> list[CMakeElement]:
+        """
+        One test executable for the variant's gtest block, linked against the objects of all selected components.
+
+        It runs with ``GCOV_PREFIX``, so its ``.gcda`` files do not mix into the coverage of the component tests.
+        """
+        testing_block = find_testing_block(self.execution_context.variant_testing, GTEST_FRAMEWORK)
+        if not (testing_block and testing_block.sources):
+            return []
+        component_generator = GTestComponentCMakeGenerator(self.execution_context, self.output_dir, self.config_obj)
+        generator_config = component_generator._determine_component_generator_config(testing_block)
+        build_dir = self.artifacts_locator.cmake_build_dir.joinpath(VARIANT_TEST_NAME)
+        gcov_dir = build_dir.joinpath("gcov")
+        components = self._variant_test_components()
+        # The same target names the component generator gives the component object libraries
+        object_libraries = [f"{component.name}_PC_lib" for component in components]
+        compiled_object_libraries = [f"{component.name}_PC_lib" for component in components if component.sources]
+        production_sources = [source for component in components for source in component.sources]
+        include_dirs = [build_dir, *self.get_include_directories().paths]
+
+        elements: list[CMakeElement] = [CMakeComment(f"Variant test of {self.variant_name}")]
+        mockup_library = None
+        if testing_block.mockup_sources:
+            mockup_library = component_generator.add_mockup_library(f"{VARIANT_TEST_NAME}_mockups", testing_block.mockup_sources, None)
+            elements.append(mockup_library)
+            if not generator_config.use_global_includes:
+                elements.append(CMakeTargetIncludeDirectories(mockup_library.target_name, include_dirs, IncludeScope.PRIVATE))
+        mockup_libraries = [mockup_library.target_name] if mockup_library else []
+
+        mockup_generator = None
+        if generator_config.automock:
+            mockup_generator = CMakeMockupCreator(
+                VARIANT_TEST_NAME,
+                production_sources,
+                build_dir,
+                [*compiled_object_libraries, *mockup_libraries],
+                UserRequest(UserRequestScope.VARIANT, target=UserRequestTarget.MOCKUP).target_name,
+                self.artifacts_locator,
+                generator_config.mocking,
+            )
+        test_executable = component_generator.add_executable(
+            f"{self.variant_name}_{VARIANT_TEST_NAME}",
+            [*testing_block.sources, *(mockup_generator.get_mockup_sources() if mockup_generator else [])],
+            [*object_libraries, *mockup_libraries],
+            None,
+        )
+        elements.append(test_executable)
+        elements.append(CMakeSetTargetProperties(test_executable.name, {"RUNTIME_OUTPUT_DIRECTORY": build_dir}))
+        if not generator_config.use_global_includes:
+            elements.append(CMakeTargetIncludeDirectories(test_executable.name, include_dirs, IncludeScope.PRIVATE))
+
+        junit_report = build_dir.joinpath(f"{VARIANT_TEST_NAME}_junit.xml")
+        execute_tests_command = CMakeCustomCommand(
+            "Run the variant test executable, generate JUnit report and return success independent of the test result",
+            outputs=[junit_report],
+            depends=[test_executable.name],
+            commands=[
+                CMakeCommand(
+                    "${CMAKE_COMMAND}",
+                    [
+                        "-E",
+                        "env",
+                        f"GCOV_PREFIX={gcov_dir}",
+                        build_dir.joinpath(test_executable.name),
+                        f"--gtest_output=xml:{junit_report}",
+                        "||",
+                        "${CMAKE_COMMAND}",
+                        "-E",
+                        "true",
+                    ],
+                )
+            ],
+        )
+        elements.append(execute_tests_command)
+        variant_test_target = UserRequest(UserRequestScope.VARIANT, target=UserRequestTarget.TEST)
+        elements.append(CMakeCustomTarget(variant_test_target.target_name, f"Execute the variant test of {self.variant_name}", [], [junit_report], True))
+        self.execution_context.data_registry.insert(
+            TestResultFile(target=variant_test_target, junit_report=junit_report, test_sources=testing_block.sources),
+            variant_test_target.target_name,
+        )
+
+        elements.extend(self.create_variant_test_coverage(execute_tests_command, compiled_object_libraries, production_sources, gcov_dir))
+        if mockup_generator:
+            elements.extend(mockup_generator.generate())
+        elements.append(CMakeEmptyLine())
+        return elements
+
+    def _variant_test_components(self) -> list[Component]:
+        """
+        The components whose objects the variant ships.
+
+        An integration component holds test-only copies of the objects of the components it integrates; linking it too
+        would define their symbols twice.
+        """
+        return [component for component in self.execution_context.components if not component.is_container and not component.integrates]
+
+    def create_variant_test_coverage(self, execute_tests_command: CMakeCustomCommand, object_libraries: list[str], sources: list[Path], gcov_dir: CMakePath) -> list[CMakeElement]:
+        """A page of its own, so the merged component coverage of the variant report stays as it is."""
+        artifacts_locator = CoverageArtifactsLocator.from_cmake_artifacts_locator(self.artifacts_locator)
+        build_dir = self.artifacts_locator.cmake_build_dir.joinpath(VARIANT_TEST_NAME)
+        gcovr_config_file = build_dir.joinpath("gcovr.cfg")
+        gcovr_html_dir = artifacts_locator.cmake_variant_reports_dir.joinpath(f"{VARIANT_TEST_NAME}_coverage")
+        gcovr_html_file = gcovr_html_dir.joinpath("index.html")
+        coverage_cmd = CMakeCustomCommand(
+            description="Generate coverage report for the variant test",
+            outputs=[gcovr_config_file, gcovr_html_file],
+            depends=execute_tests_command.outputs,
+            command_expand_lists=True,
+            commands=[
+                CMakeCommand(
+                    "yanga_cmd",
+                    [
+                        "gcovr_config_component",
+                        "--component-objects",
+                        *[f"$<TARGET_OBJECTS:{library}>" for library in object_libraries],
+                        "--source-files",
+                        *[CMakePath(source) for source in sources],
+                        "--gcov-prefix",
+                        gcov_dir,
+                        "--output-file",
+                        gcovr_config_file,
+                    ],
+                ),
+                CMakeCommand("${CMAKE_COMMAND}", ["-E", "make_directory", gcovr_html_dir]),
+                CMakeCommand("gcovr", ["--config", gcovr_config_file, "--html", "--html-details", "--output", gcovr_html_file]),
+            ],
+        )
+        coverage_target = UserRequest(UserRequestScope.VARIANT, target=f"{VARIANT_TEST_NAME}_coverage")
+        self.execution_context.data_registry.insert(
+            ReportRelevantFiles(
+                target=coverage_target,
+                files_to_be_included=[],
+                file_type=ReportRelevantFileType.COVERAGE_RESULT,
+                html_content=ReportRelevantHtmlContent(
+                    name="Variant Test Coverage",
+                    # When registering an html content, the path shall be relative to the reports directory
+                    index_html=gcovr_html_file.to_path().relative_to(artifacts_locator.cmake_variant_reports_dir.to_path()),
+                ),
+            ),
+            coverage_target.target_name,
+        )
+        return [
+            coverage_cmd,
+            CMakeCustomTarget(name=coverage_target.target_name, description="Generate coverage report for the variant test", commands=[], depends=coverage_cmd.outputs),
+            # gcovr --html-details populates the dir with files unknown to ninja
+            CMakeAddTargetCleanFiles(target=coverage_target.target_name, files=[gcovr_html_dir]),
+        ]
 
     def create_variant_cmake_elements(self) -> list[CMakeElement]:
         elements: list[CMakeElement] = []

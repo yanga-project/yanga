@@ -1,4 +1,6 @@
 from pathlib import Path
+from typing import cast
+from unittest.mock import Mock
 
 import pytest
 from py_app_dev.core.data_registry import DataRegistry
@@ -6,7 +8,8 @@ from py_app_dev.core.exceptions import UserNotificationException
 from pypeline.domain.external_project import ExternalProject
 from yanga_core.domain.components import Component, TestingBlock
 from yanga_core.domain.config import ComponentConfig, MockingConfig, TestingBlockConfig
-from yanga_core.domain.execution_context import ExecutionContext
+from yanga_core.domain.execution_context import ExecutionContext, UserRequestScope
+from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
 
 from tests.conftest import make_execution_context
 from tests.utils import assert_element_of_type, assert_elements_of_type, find_elements_of_type
@@ -19,10 +22,12 @@ from yanga.cmake.cmake_backend import (
     CMakeElement,
     CMakeInclude,
     CMakeIncludeDirectories,
+    CMakeSetTargetProperties,
     CMakeTargetIncludeDirectories,
     CMakeVariable,
     IncludeScope,
 )
+from yanga.cmake.coverage import CoverageRelevantFile
 from yanga.cmake.gtest import GTestCMakeArtifactsLocator, GTestCMakeGenerator, GTestCMakeGeneratorConfig, GTestComponentCMakeGenerator
 from yanga.cmake.sphinx_test_report import TestResultFile
 
@@ -430,3 +435,156 @@ def test_container_test_target_runs_subcomponent_tests(container_elements: list[
 def test_container_compiles_nothing(container_elements: list[CMakeElement]) -> None:
     assert [library.name for library in find_elements_of_type(container_elements, CMakeAddLibrary)] == ["tcp_PC", "udp_PC"]
     assert [executable.name for executable in find_elements_of_type(container_elements, CMakeAddExecutable)] == ["tcp"]
+
+
+def variant_test_context(tmp_path: Path, *blocks: TestingBlock) -> ExecutionContext:
+    configs = [
+        comp_a_config(TestingBlockConfig(framework="gtest", sources=["test_compA.cc"], mockup_sources=["fake_a.c"])),
+        ComponentConfig(name="CompB", path=Path("compB"), sources=["compB.c"]),
+    ]
+    execution_context = make_gtest_context(tmp_path, configs)
+    cast(Mock, execution_context).variant_testing = list(blocks)
+    return execution_context
+
+
+def variant_gtest_block(tmp_path: Path) -> TestingBlock:
+    return TestingBlock(framework="gtest", sources=[tmp_path / "test_variant.cc"], mockup_sources=[tmp_path / "fake_os.c"], config={"mocking": {"strict": True}})
+
+
+def command_arguments(command: CMakeCustomCommand) -> list[str]:
+    return [str(arg) for cmake_command in command.commands for arg in cmake_command.arguments]
+
+
+@pytest.mark.parametrize("automock", [True, False])
+def test_variant_test_executable_links_every_component(tmp_path: Path, output_dir: Path, automock: bool) -> None:
+    elements = GTestCMakeGenerator(variant_test_context(tmp_path, variant_gtest_block(tmp_path)), output_dir, {"mocking": {"enabled": automock}}).generate()
+
+    variant_test_dir = "${CMAKE_BUILD_DIR}/variant_test"
+    executable = assert_element_of_type(elements, CMakeAddExecutable, lambda exe: exe.name == "mock_variant_variant_test")
+    assert [str(source) for source in executable.sources] == [(tmp_path / "test_variant.cc").as_posix()] + [f"{variant_test_dir}/mockup_variant_test.cc"] * automock
+    assert {"GTest::gtest_main", "CompA_PC_lib", "CompB_PC_lib", "variant_test_mockups_lib"} <= set(executable.libraries)
+    assert "CompA_mockups_lib" not in executable.libraries
+    library = assert_element_of_type(elements, CMakeAddLibrary, lambda lib: lib.name == "variant_test_mockups")
+    assert library.files == [tmp_path / "fake_os.c"]
+    assert "--coverage" not in library.compile_options
+    properties = assert_element_of_type(elements, CMakeSetTargetProperties, lambda props: props.target == "mock_variant_variant_test")
+    assert str(properties.properties["RUNTIME_OUTPUT_DIRECTORY"]) == variant_test_dir
+    assert len([target for target in find_elements_of_type(elements, CMakeCustomTarget) if target.name == "mockup"]) == automock
+
+
+def test_variant_mockup_is_generated_from_all_components(tmp_path: Path, output_dir: Path) -> None:
+    elements = GTestCMakeGenerator(variant_test_context(tmp_path, variant_gtest_block(tmp_path)), output_dir, {"mocking": {"strict": False}}).generate()
+
+    partial_link = assert_element_of_type(
+        elements, CMakeCustomCommand, lambda cmd: cmd.description.startswith("Create partial link library") and "$<TARGET_OBJECTS:CompB_PC_lib>" in command_arguments(cmd)
+    )
+    assert {"$<TARGET_OBJECTS:CompA_PC_lib>", "$<TARGET_OBJECTS:variant_test_mockups_lib>"} <= set(command_arguments(partial_link))
+    clanguru = assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: cmd.description.startswith("Run clanguru") and "mockup_variant_test" in command_arguments(cmd))
+    arguments = command_arguments(clanguru)
+    assert "--strict" in arguments
+    assert {f"--source-file {(tmp_path / source).as_posix()}" for source in ("compA/compA.c", "compB/compB.c")} <= set(arguments)
+
+
+def test_variant_test_runs_and_registers_its_junit_result(tmp_path: Path, output_dir: Path) -> None:
+    execution_context = variant_test_context(tmp_path, variant_gtest_block(tmp_path))
+
+    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    junit_report = output_dir / "variant_test" / "variant_test_junit.xml"
+    run = assert_element_of_type(
+        elements, CMakeCustomCommand, lambda cmd: [str(output) for output in cmd.outputs or []] == ["${CMAKE_BUILD_DIR}/variant_test/variant_test_junit.xml"]
+    )
+    assert "GCOV_PREFIX=${CMAKE_BUILD_DIR}/variant_test/gcov" in run.to_string()
+    target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "test")
+    assert target.default_target
+    assert "${CMAKE_BUILD_DIR}/variant_test/variant_test_junit.xml" in [str(depend) for depend in target.depends or []]
+    [test_result] = [entry for entry in execution_context.data_registry.find_data(TestResultFile) if entry.target.scope == UserRequestScope.VARIANT]
+    assert test_result.target.target_name == "test"
+    assert test_result.junit_report.to_path() == junit_report
+    assert test_result.test_sources == [tmp_path / "test_variant.cc"]
+
+
+@pytest.mark.parametrize(
+    "variant_testing",
+    [
+        [TestingBlock(framework="tessy", sources=[Path("test_variant.c")])],
+        [TestingBlock(framework="gtest", mockup_sources=[Path("fake_os.c")])],
+    ],
+)
+def test_variant_without_gtest_sources_generates_as_before(tmp_path: Path, output_dir: Path, variant_testing: list[TestingBlock]) -> None:
+    expected = [element.to_string() for element in GTestCMakeGenerator(variant_test_context(tmp_path), output_dir).generate()]
+    execution_context = variant_test_context(tmp_path, *variant_testing)
+
+    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    assert [element.to_string() for element in elements] == expected
+    assert [entry.target.target_name for entry in execution_context.data_registry.find_data(TestResultFile)] == ["CompA_test"]
+
+
+def variant_test_coverage_command(elements: list[CMakeElement]) -> CMakeCustomCommand:
+    return assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: "--gcov-prefix" in command_arguments(cmd))
+
+
+def test_variant_test_coverage_reads_its_own_gcda_files(tmp_path: Path, output_dir: Path) -> None:
+    elements = GTestCMakeGenerator(variant_test_context(tmp_path, variant_gtest_block(tmp_path)), output_dir).generate()
+
+    command = variant_test_coverage_command(elements)
+    arguments = command_arguments(command)
+    assert arguments[0] == "gcovr_config_component"
+    assert arguments[arguments.index("--gcov-prefix") + 1] == "${CMAKE_BUILD_DIR}/variant_test/gcov"
+    assert {"$<TARGET_OBJECTS:CompA_PC_lib>", "$<TARGET_OBJECTS:CompB_PC_lib>", (tmp_path / "compA" / "compA.c").as_posix(), (tmp_path / "compB" / "compB.c").as_posix()} <= set(
+        arguments
+    )
+    index_html = "${CMAKE_BUILD_DIR}/reports/variant_test_coverage/index.html"
+    assert index_html in [str(output) for output in command.outputs or []]
+    target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "variant_test_coverage")
+    assert index_html in [str(depend) for depend in target.depends or []]
+
+
+def test_variant_test_coverage_is_its_own_report_page(tmp_path: Path, output_dir: Path) -> None:
+    execution_context = variant_test_context(tmp_path, variant_gtest_block(tmp_path))
+
+    GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    variant_pages = {
+        entry.target.target_name: entry
+        for entry in execution_context.data_registry.find_data(ReportRelevantFiles)
+        if entry.target.scope == UserRequestScope.VARIANT and entry.file_type == ReportRelevantFileType.COVERAGE_RESULT
+    }
+    assert set(variant_pages) == {"coverage", "variant_test_coverage"}
+    html_content = variant_pages["variant_test_coverage"].html_content
+    assert html_content is not None
+    assert html_content.name == "Variant Test Coverage"
+    assert html_content.index_html == Path("variant_test_coverage/index.html")
+    assert [entry.target.target_name for entry in execution_context.data_registry.find_data(CoverageRelevantFile)] == ["CompA_coverage"]
+
+
+def test_variant_test_leaves_out_the_integration_component(tmp_path: Path, output_dir: Path) -> None:
+    configs = [
+        ComponentConfig(name="CompA", path=Path("compA"), sources=["a.c"]),
+        ComponentConfig(name="CompB", path=Path("compB"), sources=["b.c"]),
+        ComponentConfig(name="IntegAB", integrates=["CompA", "CompB"], testing=[TestingBlockConfig(framework="gtest", sources=["test_integ.cc"])]),
+    ]
+    execution_context = make_gtest_context(tmp_path, configs)
+    cast(Mock, execution_context).variant_testing = [variant_gtest_block(tmp_path)]
+
+    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    executable = assert_element_of_type(elements, CMakeAddExecutable, lambda exe: exe.name == "mock_variant_variant_test")
+    assert {"CompA_PC_lib", "CompB_PC_lib"} <= set(executable.libraries)
+    assert "IntegAB_PC_lib" not in executable.libraries
+    partial_link = assert_element_of_type(
+        elements,
+        CMakeCustomCommand,
+        lambda cmd: cmd.description.startswith("Create partial link library") and "$<TARGET_OBJECTS:variant_test_mockups_lib>" in command_arguments(cmd),
+    )
+    coverage_arguments = command_arguments(variant_test_coverage_command(elements))
+    for arguments in (command_arguments(partial_link), coverage_arguments):
+        assert {"$<TARGET_OBJECTS:CompA_PC_lib>", "$<TARGET_OBJECTS:CompB_PC_lib>"} <= set(arguments)
+        assert "$<TARGET_OBJECTS:IntegAB_PC_lib>" not in arguments
+    sources = [(tmp_path / source).as_posix() for source in ("compA/a.c", "compB/b.c")]
+    assert [argument for argument in coverage_arguments if argument in sources] == sources
+    clanguru = assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: cmd.description.startswith("Run clanguru") and "mockup_variant_test" in command_arguments(cmd))
+    assert [argument for argument in command_arguments(clanguru) if argument.startswith("--source-file ")] == [f"--source-file {source}" for source in sources]
+    integ_executable = assert_element_of_type(elements, CMakeAddExecutable, lambda exe: exe.name == "IntegAB")
+    assert "IntegAB_PC_lib" in integ_executable.libraries

@@ -93,7 +93,7 @@ platforms:
 
 ## `SphinxTestReportCMakeGenerator`
 
-This generator renders the GoogleTest results for the reports. For every component JUnit report that `GTestCMakeGenerator` registers, it writes a `<component>_test_report.rst` page with a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive and registers it as the component test result. The page then shows as **Test Report** in the component chapter, next to the coverage report. The project must load the `sphinx_test_reports` extension in its `conf.py`.
+This generator renders the GoogleTest results for the reports. For every component or variant JUnit report that `GTestCMakeGenerator` registers, it writes a `<component>_test_report.rst` page (`<variant>_test_report.rst` for the variant test) with a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive and registers it as the component test result. The page then shows as **Test Report** in the component chapter, next to the coverage report. The project must load the `sphinx_test_reports` extension in its `conf.py`.
 
 **Use Case:** Showing test results in the component and variant reports, and linking them to test specifications with sphinx-needs.
 

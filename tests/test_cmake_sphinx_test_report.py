@@ -20,3 +20,17 @@ def test_writes_and_registers_a_test_report_page(execution_context: ExecutionCon
     assert registered.file_type == ReportRelevantFileType.TEST_RESULT
     assert registered.target.target_name == "light_controller_test"
     assert registered.files_to_be_included == [page]
+
+
+def test_names_the_page_of_a_variant_test_after_the_variant(execution_context: ExecutionContext, output_dir: Path) -> None:
+    target = UserRequest(UserRequestScope.VARIANT, target=UserRequestTarget.TEST)
+    junit_report = output_dir / "variant_test" / "variant_test_junit.xml"
+    execution_context.data_registry.insert(TestResultFile(target=target, junit_report=CMakePath(junit_report)), target.target_name)
+
+    SphinxTestReportCMakeGenerator(execution_context, output_dir).generate()
+
+    page = output_dir / "variant_test" / "mock_variant_test_report.rst"
+    assert page.read_text() == (f"Test Report\n===========\n\n.. test-report:: mock_variant test results\n   :id: TR_MOCK_VARIANT\n   :file: {junit_report.as_posix()}\n")
+    [registered] = execution_context.data_registry.find_data(ReportRelevantFiles)
+    assert registered.target.target_name == "test"
+    assert registered.files_to_be_included == [page]

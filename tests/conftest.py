@@ -73,6 +73,7 @@ def make_execution_context(tmp_path: Path, configs: list[ComponentConfig], selec
     env.components = resolver.selected_components
     env.project_configs = []
     env.variant = None
+    env.variant_testing = []
     return env
 
 

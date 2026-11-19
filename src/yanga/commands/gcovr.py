@@ -8,6 +8,7 @@ It gets from the command line:
 """
 
 import os
+import shutil
 from argparse import ArgumentParser, Namespace
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -72,6 +73,10 @@ class ComponentCommandArgs(BaseConfigJSONMixin):
     output_file: Path = field(
         metadata={"help": "Output Gcovr configuration file."},
     )
+    gcov_prefix: Path | None = field(
+        default=None,
+        metadata={"help": "GCOV_PREFIX the tests ran with: the .gcno files are copied there, next to the .gcda files."},
+    )
 
 
 class CreateComponentGcovrConfigCommand(Command):
@@ -88,6 +93,13 @@ class CreateComponentGcovrConfigCommand(Command):
         else:
             self.logger.error("No component object files provided.")
             return 1
+        if config.gcov_prefix:
+            # libgcov writes each .gcda under GCOV_PREFIX at the object's absolute path; gcov wants the .gcno beside it.
+            for gcno_file in (obj.with_suffix(".gcno").resolve() for obj in config.component_objects):
+                target = config.gcov_prefix / gcno_file.relative_to(gcno_file.anchor)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(gcno_file, target)
+            object_directory = str(config.gcov_prefix)
         # Create a gcovr config file
         gcovr_cfg_lines = [
             f"root = {Path(object_directory).as_posix()}",
