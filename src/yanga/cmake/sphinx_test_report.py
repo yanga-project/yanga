@@ -1,5 +1,6 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from yanga_core.domain.execution_context import UserRequest
 from yanga_core.domain.generated_file import GeneratedFile
@@ -17,6 +18,8 @@ class TestResultFile:
 
     target: UserRequest
     junit_report: CMakePath
+    #: The test sources the framework built, listed in the component report
+    test_sources: list[Path] = field(default_factory=list)
 
 
 class SphinxTestReportCMakeGenerator(CMakeGenerator):

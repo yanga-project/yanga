@@ -5,11 +5,12 @@ import pytest
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 from pypeline_semantic_release.check_ci_context import CIContext, CISystem
 from yanga_core.domain.component_resolver import ComponentResolver
-from yanga_core.domain.config import ComponentConfig, DocsConfig
+from yanga_core.domain.config import ComponentConfig, DocsConfig, TestingBlockConfig
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
 from yanga_core.domain.publish_manifest import PublishedFile, PublishKind
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
 
+from tests.conftest import make_execution_context
 from tests.utils import assert_element_of_type, assert_elements_of_type, find_elements_of_type
 from yanga.cmake.artifacts_locator import CMakeArtifactsLocator
 from yanga.cmake.cmake_backend import (
@@ -122,6 +123,23 @@ def test_source_pages_are_grouped_under_a_sources_page(execution_context: Execut
     assert entry.files_to_be_included[0].read_text() == "# Sources\n\n```{toctree}\n:maxdepth: 1\n\ncompB_source.cpp.md\n```\n"
 
 
+def test_component_report_lists_the_registered_test_sources(tmp_path: Path, output_dir: Path) -> None:
+    testing = [TestingBlockConfig(framework="gtest", sources=["test_gtest.cc"]), TestingBlockConfig(framework="tessy", sources=["test_tessy.c"])]
+    configs = [ComponentConfig(name="CompA", path=Path("compA"), sources=["compA_source.cpp"], testing=testing)]
+    execution_context = make_execution_context(tmp_path, configs)
+    target = UserRequest(UserRequestScope.COMPONENT, component_name="CompA", target=UserRequestTarget.TEST)
+    junit_report = CMakeArtifactsLocator(output_dir, execution_context.spl_paths).get_component_build_dir("CompA").joinpath("CompA_junit.xml")
+    test_result = TestResultFile(target=target, junit_report=junit_report, test_sources=execution_context.components[0].testing[0].sources)
+    execution_context.data_registry.insert(test_result, target.target_name)
+
+    ReportCMakeGenerator(execution_context, output_dir).create_components_cmake_elements()
+
+    entry = assert_element_of_type(
+        execution_context.data_registry.find_data(ReportRelevantFiles), ReportRelevantFiles, lambda elem: elem.file_type == ReportRelevantFileType.SOURCES
+    )
+    assert [file.name for file in entry.all_files] == ["compA_source.cpp.md", "test_gtest.cc.md"]
+
+
 def make_generator(execution_context: ExecutionContext, output_dir: Path, config: dict[str, Any] | None) -> ReportCMakeGenerator:
     return ReportCMakeGenerator(execution_context, output_dir, config)
 
@@ -129,7 +147,8 @@ def make_generator(execution_context: ExecutionContext, output_dir: Path, config
 def register_comp_a_test_result(execution_context: ExecutionContext, output_dir: Path) -> None:
     target = UserRequest(UserRequestScope.COMPONENT, component_name="CompA", target=UserRequestTarget.TEST)
     junit_report = CMakeArtifactsLocator(output_dir, execution_context.spl_paths).get_component_build_dir("CompA").joinpath("CompA_junit.xml")
-    execution_context.data_registry.insert(TestResultFile(target=target, junit_report=junit_report), target.target_name)
+    test_result = TestResultFile(target=target, junit_report=junit_report, test_sources=execution_context.components[0].testing[0].sources)
+    execution_context.data_registry.insert(test_result, target.target_name)
 
 
 def find_target(elements: list[Any], name: str) -> CMakeCustomTarget:

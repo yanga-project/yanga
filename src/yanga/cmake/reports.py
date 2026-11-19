@@ -193,10 +193,10 @@ class ReportCMakeGenerator(CMakeGenerator):
             if not (component.docs and component.docs.exclude_productive_code):
                 source_files.extend([CMakePath(source) for source in component.sources])
 
-            # Check if there are any test results registered for the component
-            test_results = any(entry.target.component_name == component.name for entry in self.execution_context.data_registry.find_data(TestResultFile))
-            if test_results:
-                source_files.extend([CMakePath(source) for source in component.test_sources])
+            # The test sources the test generators built for the component, as registered with their results
+            for test_result in self.execution_context.data_registry.find_data(TestResultFile):
+                if test_result.target.component_name == component.name:
+                    source_files.extend([CMakePath(source) for source in test_result.test_sources])
             source_files_output_md = [component_build_dir.joinpath(f"{source_file.to_path().name}.md") for source_file in source_files]
             component_docs_target = UserRequest(
                 UserRequestScope.COMPONENT,

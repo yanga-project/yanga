@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 from py_app_dev.core.data_registry import DataRegistry
 from yanga_core.domain.component_resolver import ComponentResolver
-from yanga_core.domain.config import ComponentConfig, TestingConfig
+from yanga_core.domain.config import ComponentConfig, TestingBlockConfig
 from yanga_core.domain.execution_context import ExecutionContext
 from yanga_core.domain.spl_paths import SPLPaths
 
@@ -35,13 +35,13 @@ def execution_context(tmp_path: Path) -> ExecutionContext:
                 name="CompA",
                 path=Path("compA"),
                 sources=["compA_source.cpp"],
-                testing=TestingConfig(sources=["test_compA_source.cpp"]),
+                testing=[TestingBlockConfig(framework="gtest", sources=["test_compA_source.cpp"])],
             ),
             ComponentConfig(
                 name="CompBNotTestable",
                 path=Path("compB"),
                 sources=["compB_source.cpp"],
-                testing=TestingConfig(sources=[]),
+                testing=[],
             ),
         ],
     )
@@ -49,12 +49,12 @@ def execution_context(tmp_path: Path) -> ExecutionContext:
 
 @pytest.fixture
 def container_execution_context(tmp_path: Path) -> ExecutionContext:
-    """A variant selecting container ``group``, which holds container ``net``, which holds ``tcp`` (tested) and ``udp``."""
+    """A variant selecting container ``group``, which holds container ``net``, which holds ``tcp`` (gtest tests) and ``udp`` (tessy tests)."""
     configs = [
         ComponentConfig(name="group", subcomponents=["net"]),
         ComponentConfig(name="net", subcomponents=["tcp", "udp"]),
-        ComponentConfig(name="tcp", path=Path("tcp"), sources=["tcp.cpp"], testing=TestingConfig(sources=["test_tcp.cpp"])),
-        ComponentConfig(name="udp", path=Path("udp"), sources=["udp.cpp"]),
+        ComponentConfig(name="tcp", path=Path("tcp"), sources=["tcp.cpp"], testing=[TestingBlockConfig(framework="gtest", sources=["test_tcp.cpp"])]),
+        ComponentConfig(name="udp", path=Path("udp"), sources=["udp.cpp"], testing=[TestingBlockConfig(framework="tessy", sources=["test_udp.c"])]),
     ]
     return make_execution_context(tmp_path, configs, ["group"])
 

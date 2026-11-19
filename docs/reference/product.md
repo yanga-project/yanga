@@ -160,22 +160,26 @@ components:
 
 ### Testing
 
-Yanga provides a dedicated section for test-related configurations. You can specify test sources and enable features like mocking.
+`testing` is a list with one block per test framework. Each block has a `framework`, its test `sources`, test-only `mockup_sources` (not counted for coverage) and a free `config` that only the generator of that framework reads.
 
 ```yaml
 components:
   - name: my_component
     sources: ["src/my_component.c"]
     testing:
-      sources:
-        - "test/test_my_component.cpp"
-      mocking:
-        enabled: true
-        strict: true
+      - framework: gtest
+        sources:
+          - "test/test_my_component.cpp"
+        mockup_sources:
+          - "test/fake_clock.c"
+        config:
+          mocking:
+            enabled: true
+            strict: true
 ```
 
 ````{note}
-The `mocking` feature configuration depends on the mocking generator. In case of the `gtest` mocking framework, you need to configure the `GTestCMakeGenerator` for your platform:
+The `config` of a block depends on the generator of its framework. For `gtest`, `config.mocking` overrides the mocking of the `GTestCMakeGenerator` configured for your platform:
 
 ```yaml
 platforms:
@@ -232,8 +236,9 @@ components:
     integrates:
       - networking
     testing:
-      sources:
-        - "test/test_networking_integration.cc"
+      - framework: gtest
+        sources:
+          - "test/test_networking_integration.cc"
 ```
 
 ```yaml

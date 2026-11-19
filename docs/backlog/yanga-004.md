@@ -1,5 +1,5 @@
 ---
-status: Ready
+status: Done (2026-11-19)
 priority: Medium
 blocked_by: [YCORE-002]
 ---
@@ -27,13 +27,13 @@ With YCORE-002 a component declares one testing block per framework. The gtest g
 
 ## Acceptance criteria
 
-- [ ] A component with a `gtest` block and a block of another framework builds and runs only the `gtest` tests on the gtest platform
-- [ ] `mocking` in the block's `config` is applied as the component mocking is today
-- [ ] A function defined in a mockup source and called by the production code is linked from the mockup source, with no generated mock for it
-- [ ] Mockup sources do not appear in the component's coverage
-- [ ] The kickstart templates use the block form, and a project made from them builds and reports as before
-- [ ] The usage documentation shows a component with a `gtest` block, mockup sources and `config`
-- [ ] `pypeline run` is green
+- [x] A component with a `gtest` block and a block of another framework builds and runs only the `gtest` tests on the gtest platform
+- [x] `mocking` in the block's `config` is applied as the component mocking is today
+- [x] A function defined in a mockup source and called by the production code is linked from the mockup source, with no generated mock for it
+- [x] Mockup sources do not appear in the component's coverage
+- [x] The kickstart templates use the block form, and a project made from them builds and reports as before
+- [x] The usage documentation shows a component with a `gtest` block, mockup sources and `config`
+- [x] `pypeline run` is green
 
 ## Dependencies and risks
 
