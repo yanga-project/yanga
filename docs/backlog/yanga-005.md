@@ -1,7 +1,7 @@
 ---
-status: Ready
+status: Done (2026-11-19)
 priority: Medium
-blocked_by: [YCORE-002, YANGA-004]
+blocked_by: [YCORE-002, YCORE-003, YANGA-004]
 related: [YANGA-006]
 ---
 
@@ -25,11 +25,11 @@ With YCORE-002 a variant can declare testing blocks. Today the only test of more
 
 ## Acceptance criteria
 
-- [ ] A variant with a `gtest` block gets a test target that builds and runs its tests against all selected components
-- [ ] The variant report shows the variant test's results and coverage
-- [ ] A variant without `testing` builds and reports exactly as before
-- [ ] The usage documentation shows a variant with a `gtest` block
-- [ ] `pypeline run` is green
+- [x] A variant with a `gtest` block gets a test target that builds and runs its tests against all selected components
+- [x] The variant report shows the variant test's results and coverage
+- [x] A variant without `testing` builds and reports exactly as before
+- [x] The usage documentation shows a variant with a `gtest` block
+- [x] `pypeline run` is green
 
 ## Findings
 

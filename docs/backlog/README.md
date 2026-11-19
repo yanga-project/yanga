@@ -14,8 +14,6 @@
 
 ### Ready
 
-- [YANGA-005 — Variant test target for gtest blocks](yanga-005.md)
-
 ---
 
 ## Notes

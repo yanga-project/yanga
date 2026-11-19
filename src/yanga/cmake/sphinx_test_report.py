@@ -12,7 +12,7 @@ from .generator import CMakeGenerator
 
 @dataclass
 class TestResultFile:
-    """Used to register a component JUnit report for the generators that render it."""
+    """Used to register a component or variant JUnit report for the generators that render it."""
 
     __test__ = False  # not a pytest test class
 
@@ -33,13 +33,14 @@ class SphinxTestReportCMakeGenerator(CMakeGenerator):
 
     def generate(self) -> list[CMakeElement]:
         for test_result in self.execution_context.data_registry.find_data(TestResultFile):
-            component_name = test_result.target.component_name or ""
+            # A variant test has no component; its page is named after the variant
+            name = test_result.target.component_name or self.execution_context.variant_name or ""
             junit_report = test_result.junit_report.to_path()
-            page = junit_report.with_name(f"{component_name}_test_report.rst")
-            report_id = "TR_" + re.sub(r"\W", "_", component_name).upper()
+            page = junit_report.with_name(f"{name}_test_report.rst")
+            report_id = "TR_" + re.sub(r"\W", "_", name).upper()
             GeneratedFile(
                 page,
-                f"Test Report\n===========\n\n.. test-report:: {component_name} test results\n   :id: {report_id}\n   :file: {junit_report.as_posix()}\n",
+                f"Test Report\n===========\n\n.. test-report:: {name} test results\n   :id: {report_id}\n   :file: {junit_report.as_posix()}\n",
             ).to_file()
             self.execution_context.data_registry.insert(
                 ReportRelevantFiles(target=test_result.target, files_to_be_included=[page], file_type=ReportRelevantFileType.TEST_RESULT),
