@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.48.0 (2026-11-20)
+
+### Features
+
+- Show coverage reports as a browsable file tree ([`2511335`](https://github.com/yanga-project/yanga/commit/2511335c33dc1365dd6e9fcfaa321953a7137da8))
+
+### Documentation
+
+- Add yanga-007 ([`6382b2e`](https://github.com/yanga-project/yanga/commit/6382b2e0c199adcbde14d196c2dff7f7f8e14314))
+
 ## v2.47.0 (2026-11-20)
 
 ### Features
