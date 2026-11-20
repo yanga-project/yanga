@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.47.0 (2026-11-20)
+
+### Features
+
+- Add a variant test target for the variant's gtest block (yanga-005) ([`e5505bc`](https://github.com/yanga-project/yanga/commit/e5505bc0ee78ba80467e505601fa10d8ceacc4ef))
+- Build only the gtest testing block and its mockup sources (yanga-004) ([`b53cbda`](https://github.com/yanga-project/yanga/commit/b53cbda540775e01ddc1dd1761ab5af4fb248966))
+
+### Documentation
+
+- Add yanga-002 to yanga-006 ([`a0174e8`](https://github.com/yanga-project/yanga/commit/a0174e8015ab2f205810ad00de45b6fd3bc6302c))
+
 ## v2.46.0 (2026-11-18)
 
 ### Documentation
