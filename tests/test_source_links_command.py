@@ -15,8 +15,8 @@ def anchor(path: str, line: int) -> str:
     return f'<a class="reference external" href="source:{path}#{line}">{path}:{line}</a>'
 
 
-def coverage_row(title: str, href: str) -> str:
-    return f'<tr><td><a class="" title="{title}" href="{href}">{title}</a></td></tr>'
+def coverage_page(title: str) -> str:
+    return f'<div class="breadcrumb"><a href="index.html" class="breadcrumb-home">Index</a><span class="current" title="{title}">{title}</span></div>'
 
 
 def write(path: Path, content: str) -> None:
@@ -27,11 +27,9 @@ def write(path: Path, content: str) -> None:
 @pytest.fixture
 def report(tmp_path: Path) -> Path:
     report_dir = tmp_path / "report"
-    write(
-        report_dir / "coverage/light_controller/index.html",
-        coverage_row("light_controller.c", "index.light_controller.c.abc.html") + coverage_row("my_util.c", "index.my_util.c.def.html"),
-    )
-    write(report_dir / "coverage/index.html", coverage_row("spled/main.c", "index.main.c.999.html"))
+    write(report_dir / "coverage/light_controller/index.light_controller.c.abc.html", coverage_page("light_controller.c"))
+    write(report_dir / "coverage/light_controller/index.my_util.c.def.html", coverage_page("my_util.c"))
+    write(report_dir / "coverage/index.main.c.999.html", coverage_page("spled/main.c"))
     write(report_dir / PAGE, "".join(anchor(path, line) for path, line in [(COVERED, 42), (UNCOVERED, 7), ("components/x/src/util.c", 7), ("spled/main.c", 7)]))
     return report_dir
 
@@ -40,7 +38,7 @@ def test_gcovr_resolves_covered_file(report: Path, tmp_path: Path) -> None:
     resolve_source_links(report, tmp_path, [SourceLinkStrategy.GCOVR])
 
     content = (report / PAGE).read_text(encoding="utf-8")
-    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#l42"' in content
+    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#L42"' in content
     assert f"source:{COVERED}" not in content
 
 
@@ -65,7 +63,7 @@ def test_unresolved_without_coverage_dir(tmp_path: Path) -> None:
 
 
 def test_gcovr_duplicate_rows_warn_and_give_plain_text(report: Path, tmp_path: Path) -> None:
-    write(report / "coverage/other/index.html", coverage_row("light_controller.c", "index.light_controller.c.zzz.html"))
+    write(report / "coverage/other/index.light_controller.c.zzz.html", coverage_page("light_controller.c"))
     messages: list[str] = []
     sink_id = logger.add(messages.append, level="WARNING")
     try:
@@ -80,7 +78,7 @@ def test_gcovr_duplicate_rows_warn_and_give_plain_text(report: Path, tmp_path: P
 
 
 def test_gcovr_same_page_in_several_trees_goes_to_the_component_tree(report: Path, tmp_path: Path) -> None:
-    write(report / "coverage/test_integrations_spled/index.html", coverage_row("light_controller/src/light_controller.c", "index.light_controller.c.abc.html"))
+    write(report / "coverage/test_integrations_spled/index.light_controller.c.abc.html", coverage_page("light_controller/src/light_controller.c"))
     messages: list[str] = []
     sink_id = logger.add(messages.append, level="WARNING")
     try:
@@ -89,7 +87,7 @@ def test_gcovr_same_page_in_several_trees_goes_to_the_component_tree(report: Pat
         logger.remove(sink_id)
 
     content = (report / PAGE).read_text(encoding="utf-8")
-    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#l42"' in content
+    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#L42"' in content
     assert not messages
 
 
@@ -98,7 +96,7 @@ def test_vscode_fallback_for_uncovered_file(report: Path, tmp_path: Path) -> Non
 
     content = (report / PAGE).read_text(encoding="utf-8")
     assert f'href="vscode://file/{(tmp_path / UNCOVERED).as_posix()}:7"' in content
-    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#l42"' in content
+    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#L42"' in content
 
 
 def test_command_runs_from_cli(report: Path, tmp_path: Path) -> None:
@@ -108,7 +106,7 @@ def test_command_runs_from_cli(report: Path, tmp_path: Path) -> None:
 
     args = parser.parse_args(["--report-dir", str(report), "--project-root", str(tmp_path), "--strategies", "gcovr"])
     assert command.run(args) == 0
-    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#l42"' in (report / PAGE).read_text(encoding="utf-8")
+    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#L42"' in (report / PAGE).read_text(encoding="utf-8")
 
     missing = parser.parse_args(["--report-dir", str(tmp_path / "missing"), "--project-root", str(tmp_path), "--strategies", "gcovr"])
     assert command.run(missing) == 1
