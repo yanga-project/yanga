@@ -14,7 +14,7 @@ from py_app_dev.core.logging import logger, time_it
 from yanga_core.commands.base import create_config
 
 _SOURCE_ANCHOR = re.compile(r'<a\b[^>]*\bhref="source:([^"#]+)#(\d+)"[^>]*>(.*?)</a>', re.DOTALL)
-_COVERAGE_ROW = re.compile(r'<a\b[^>]*?\btitle="([^"]+)"[^>]*?\bhref="([^"]+)"')
+_COVERAGE_PAGE_PATH = re.compile(r'<span class="current" title="([^"]+)"')
 
 #: Maps a source path and line to a URL relative to the report root, an absolute URL, or None.
 Strategy = Callable[[str, int], str | None]
@@ -26,8 +26,9 @@ class SourceLinkStrategy(Enum):
 
 
 def _gcovr_strategy(report_dir: Path) -> Strategy:
+    """In gcovr's nested report a file row shows only the file name; the file's own page names its path in the breadcrumb."""
     rows = [
-        (index.parent.name, title, href) for index in sorted(report_dir.glob("coverage/*/index.html")) for title, href in _COVERAGE_ROW.findall(index.read_text(encoding="utf-8"))
+        (page.parent.name, title, page.name) for page in sorted(report_dir.glob("coverage/*/*.html")) for title in _COVERAGE_PAGE_PATH.findall(page.read_text(encoding="utf-8"))
     ]
 
     def resolve(source_path: str, line: int) -> str | None:
@@ -40,7 +41,7 @@ def _gcovr_strategy(report_dir: Path) -> Strategy:
             return None
         source_parts = PurePosixPath(source_path).parts
         tree, href = next((match for match in matches if match[0] in source_parts), matches[0])
-        return f"coverage/{tree}/{href}#l{line}"
+        return f"coverage/{tree}/{href}#L{line}"
 
     return resolve
 

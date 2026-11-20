@@ -326,7 +326,7 @@ class GTestComponentCMakeGenerator:
             )
 
             coverage_artifacts_locator = CoverageArtifactsLocator.from_cmake_artifacts_locator(self.artifacts_locator)
-            # The gcovr --html-details run populates the component coverage html dir with files
+            # The gcovr --html-nested run populates the component coverage html dir with files
             # that ninja does not track. Register the directory for recursive removal on `clean`.
             elements.append(
                 CMakeAddTargetCleanFiles(
@@ -500,8 +500,9 @@ class GTestComponentCMakeGenerator:
                         gcovr_config_file,
                         "--add-tracefile",
                         gcovr_json_file,
-                        "--html",
-                        "--html-details",
+                        "--html-nested",
+                        "--html-theme",
+                        "boost.blue",
                         "--output",
                         gcovr_html_file,
                     ],
@@ -696,7 +697,7 @@ class GTestCMakeGenerator(CMakeGenerator):
                     ],
                 ),
                 CMakeCommand("${CMAKE_COMMAND}", ["-E", "make_directory", gcovr_html_dir]),
-                CMakeCommand("gcovr", ["--config", gcovr_config_file, "--html", "--html-details", "--output", gcovr_html_file]),
+                CMakeCommand("gcovr", ["--config", gcovr_config_file, "--html-nested", "--html-theme", "boost.blue", "--output", gcovr_html_file]),
             ],
         )
         coverage_target = UserRequest(UserRequestScope.VARIANT, target=f"{VARIANT_TEST_NAME}_coverage")
@@ -716,7 +717,7 @@ class GTestCMakeGenerator(CMakeGenerator):
         return [
             coverage_cmd,
             CMakeCustomTarget(name=coverage_target.target_name, description="Generate coverage report for the variant test", commands=[], depends=coverage_cmd.outputs),
-            # gcovr --html-details populates the dir with files unknown to ninja
+            # gcovr --html-nested populates the dir with files unknown to ninja
             CMakeAddTargetCleanFiles(target=coverage_target.target_name, files=[gcovr_html_dir]),
         ]
 
@@ -795,8 +796,9 @@ class GTestCMakeGenerator(CMakeGenerator):
                     [
                         "--config",
                         gcovr_config_file,
-                        "--html",
-                        "--html-details",
+                        "--html-nested",
+                        "--html-theme",
+                        "boost.blue",
                         "--output",
                         gcovr_html_file,
                     ],
@@ -816,7 +818,7 @@ class GTestCMakeGenerator(CMakeGenerator):
                 depends=coverage_cmd.outputs,
             )
         )
-        # gcovr --html-details and copy_directory populate these dirs with files unknown to ninja.
+        # gcovr --html-nested and copy_directory populate these dirs with files unknown to ninja.
         # Register them for recursive removal on `clean` to avoid "Directory not empty" failures.
         elements.append(
             CMakeAddTargetCleanFiles(

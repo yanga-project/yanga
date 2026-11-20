@@ -54,6 +54,8 @@ This generator facilitates unit testing using the Google Test framework. For eac
 
 **Use Case:** Running unit tests and generating coverage reports for individual components.
 
+The coverage reports are gcovr HTML reports in nested mode with the `boost.blue` theme: a sidebar shows the files as a folder tree under their common path, and a switch shows them as a flat list. The entry page of each report is `index.html`.
+
 A container component compiles nothing itself; its `test` and `build` targets run the tests of its subcomponents. An integration component needs no special handling: it is a component whose sources include those of the components it integrates.
 
 **Configuration:**
@@ -178,7 +180,7 @@ platforms:
 
 Strategies:
 
-* `gcovr`: links to the line in the component coverage page (`coverage/<component>/index.html`) of the report, relative to the page. A file can be listed in several component trees, for example by an integration test component; rows with the same page name are the same file, and the tree of the component in the source path wins. If matching rows have different page names, it logs a warning and the link becomes plain text.
+* `gcovr`: links to the line in the file's page of the component coverage report (`coverage/<component>/`), relative to the page. It finds the file by the path that each file page shows in its breadcrumb. A file can be listed in several component trees, for example by an integration test component; pages with the same name are the same file, and the tree of the component in the source path wins. If matching pages have different names, it logs a warning and the link becomes plain text.
 * `vscode`: links to `vscode://file/<absolute path>:<line>`. It works only on the machine that built the report, so use it in a `local` profile.
 
 The profile is `ci` when the `CIContext` from the `CheckCIContext` step of pypeline-semantic-release says `is_ci`. Otherwise it is `local`, also when there is no `CIContext`. A profile that is not configured falls back to `default`.
