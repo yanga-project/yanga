@@ -15,8 +15,10 @@ from pathlib import Path
 
 import pytest
 from clanguru.compilation_options_manager import CompileCommand
+from yanga_core.domain.config import ComponentConfig
 from yanga_core.domain.execution_context import ExecutionContext
 
+from tests.conftest import make_execution_context
 from tests.utils import find_elements_of_type
 from yanga.cmake.clang_tidy import ClangTidyCMakeGenerator
 from yanga.cmake.cmake_backend import CMakeCustomCommand, CMakeCustomTarget, CMakePath
@@ -118,6 +120,33 @@ def test_generate_one_clang_tidy_step_per_source(
     tidy_commands = [command for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy"]
     assert len(tidy_commands) == expected_tidy_commands
     assert all(len(command.depends or []) == 2 for command in tidy_commands)
+
+
+@pytest.mark.parametrize(
+    ("test_net_sources", "expected_targets", "expected_descriptions"),
+    [
+        ([], ["tcp_lint", "udp_lint", "lint"], ["Run clang-tidy for tcp tcp.cpp", "Run clang-tidy for udp udp.cpp"]),
+        (
+            ["glue.cpp"],
+            ["tcp_lint", "udp_lint", "test_net_lint", "lint"],
+            ["Run clang-tidy for tcp tcp.cpp", "Run clang-tidy for udp udp.cpp", "Run clang-tidy for test_net glue.cpp"],
+        ),
+    ],
+    ids=["integration-without-own-sources-skipped", "integration-analysed-for-own-sources-only"],
+)
+def test_generate_clang_tidy_steps_only_for_own_sources(
+    tmp_path: Path, test_net_sources: list[str], expected_targets: list[str], expected_descriptions: list[str], output_dir: Path
+) -> None:
+    configs = [
+        ComponentConfig(name="tcp", path=Path("tcp"), sources=["tcp.cpp"]),
+        ComponentConfig(name="udp", path=Path("udp"), sources=["udp.cpp"]),
+        ComponentConfig(name="test_net", path=Path("itest"), sources=test_net_sources, integrates=["tcp", "udp"]),
+    ]
+    elements = ClangTidyCMakeGenerator(make_execution_context(tmp_path, configs), output_dir).generate()
+
+    assert [target.name for target in find_elements_of_type(elements, CMakeCustomTarget)] == expected_targets
+    tidy_commands = [command for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy"]
+    assert [command.description for command in tidy_commands] == expected_descriptions
 
 
 def test_clang_tidy_steps_rerun_when_project_config_changes(execution_context: ExecutionContext, output_dir: Path) -> None:

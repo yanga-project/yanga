@@ -121,6 +121,7 @@ This generator integrates `clang-tidy`, which ships with the clang toolchain and
 
 * The platform may build with gcc. The generator rewrites the variant `compile_commands.json` for clang and keeps only the flags clang needs to parse (`-I`, `-D`, `-U`, `-isystem`, `-include`, `-std=` and similar), so gcc-only flags such as `-fcondition-coverage` do not stop clang-tidy.
 * clang-tidy runs once per production source file, so a rebuild analyses only the files that changed. Test sources are not analysed. A change to the `.clang-tidy` file in the project root reruns all files; nested `.clang-tidy` files are not tracked.
+* An integration component is analysed only for the sources it declares itself. The files it integrates are analysed under their own component.
 * Warnings in headers are reported only for headers below the component include directories, so toolchain headers stay out of the report.
 * Files that clang cannot parse are listed in their own **Parse failures** section. Findings and parse failures never fail the build.
 
