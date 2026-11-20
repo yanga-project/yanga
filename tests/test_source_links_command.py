@@ -15,8 +15,8 @@ def anchor(path: str, line: int) -> str:
     return f'<a class="reference external" href="source:{path}#{line}">{path}:{line}</a>'
 
 
-def coverage_page(title: str) -> str:
-    return f'<div class="breadcrumb"><a href="index.html" class="breadcrumb-home">Index</a><span class="current" title="{title}">{title}</span></div>'
+def coverage_page(title: str, line_ids: str = '<a id="L42" href="#L42">42</a>') -> str:
+    return f'<div class="breadcrumb"><a href="index.html" class="breadcrumb-home">Index</a><span class="current" title="{title}">{title}</span></div>{line_ids}'
 
 
 def write(path: Path, content: str) -> None:
@@ -40,6 +40,29 @@ def test_gcovr_resolves_covered_file(report: Path, tmp_path: Path) -> None:
     content = (report / PAGE).read_text(encoding="utf-8")
     assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html#L42"' in content
     assert f"source:{COVERED}" not in content
+
+
+@pytest.mark.parametrize("line_id", ["L42", "l42"], ids=["boost-theme", "github-theme"])
+def test_gcovr_anchor_follows_the_page(report: Path, tmp_path: Path, line_id: str) -> None:
+    write(report / "coverage/light_controller/index.light_controller.c.abc.html", coverage_page("light_controller.c", f'<a id="{line_id}" href="#{line_id}">42</a>'))
+
+    resolve_source_links(report, tmp_path, [SourceLinkStrategy.GCOVR])
+
+    assert f'href="../../../coverage/light_controller/index.light_controller.c.abc.html#{line_id}"' in (report / PAGE).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("line_ids", ["", '<a id="lightController"></a><a id="L43"></a>'], ids=["no-line-ids", "function-id-only"])
+def test_gcovr_missing_line_links_the_page_and_warns(report: Path, tmp_path: Path, line_ids: str) -> None:
+    write(report / "coverage/light_controller/index.light_controller.c.abc.html", coverage_page("light_controller.c", line_ids))
+    messages: list[str] = []
+    sink_id = logger.add(messages.append, level="WARNING")
+    try:
+        resolve_source_links(report, tmp_path, [SourceLinkStrategy.GCOVR])
+    finally:
+        logger.remove(sink_id)
+
+    assert 'href="../../../coverage/light_controller/index.light_controller.c.abc.html"' in (report / PAGE).read_text(encoding="utf-8")
+    assert any(COVERED in message and "42" in message for message in messages)
 
 
 @pytest.mark.parametrize("path", [UNCOVERED, "components/x/src/util.c", "spled/main.c"], ids=["not-covered", "no-slash-boundary", "variant-tree-only"])

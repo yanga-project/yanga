@@ -180,7 +180,7 @@ platforms:
 
 Strategies:
 
-* `gcovr`: links to the line in the file's page of the component coverage report (`coverage/<component>/`), relative to the page. It finds the file by the path that each file page shows in its breadcrumb. A file can be listed in several component trees, for example by an integration test component; pages with the same name are the same file, and the tree of the component in the source path wins. If matching pages have different names, it logs a warning and the link becomes plain text.
+* `gcovr`: links to the line in the file's page of the component coverage report (`coverage/<component>/`), relative to the page. It finds the file by the path that each file page shows in its breadcrumb. The line anchor follows the page: `#L<line>` or `#l<line>`, whichever id the page has for that line (gcovr's boost and github themes differ); a line without an id links to the page and logs a warning. A file can be listed in several component trees, for example by an integration test component; pages with the same name are the same file, and the tree of the component in the source path wins. If matching pages have different names, it logs a warning and the link becomes plain text.
 * `vscode`: links to `vscode://file/<absolute path>:<line>`. It works only on the machine that built the report, so use it in a `local` profile.
 
 The profile is `ci` when the `CIContext` from the `CheckCIContext` step of pypeline-semantic-release says `is_ci`. Otherwise it is `local`, also when there is no `CIContext`. A profile that is not configured falls back to `default`.

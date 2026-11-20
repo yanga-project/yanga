@@ -15,6 +15,7 @@ from yanga_core.commands.base import create_config
 
 _SOURCE_ANCHOR = re.compile(r'<a\b[^>]*\bhref="source:([^"#]+)#(\d+)"[^>]*>(.*?)</a>', re.DOTALL)
 _COVERAGE_PAGE_PATH = re.compile(r'<span class="current" title="([^"]+)"')
+_COVERAGE_LINE_ID = re.compile(r'\bid="([lL]\d+)"')
 
 #: Maps a source path and line to a URL relative to the report root, an absolute URL, or None.
 Strategy = Callable[[str, int], str | None]
@@ -27,9 +28,9 @@ class SourceLinkStrategy(Enum):
 
 def _gcovr_strategy(report_dir: Path) -> Strategy:
     """In gcovr's nested report a file row shows only the file name; the file's own page names its path in the breadcrumb."""
-    rows = [
-        (page.parent.name, title, page.name) for page in sorted(report_dir.glob("coverage/*/*.html")) for title in _COVERAGE_PAGE_PATH.findall(page.read_text(encoding="utf-8"))
-    ]
+    contents = {(page.parent.name, page.name): page.read_text(encoding="utf-8") for page in sorted(report_dir.glob("coverage/*/*.html"))}
+    rows = [(tree, title, href) for (tree, href), content in contents.items() for title in _COVERAGE_PAGE_PATH.findall(content)]
+    line_ids = {(tree, href): set(_COVERAGE_LINE_ID.findall(contents[tree, href])) for tree, _, href in rows}
 
     def resolve(source_path: str, line: int) -> str | None:
         """Rows with the same page name are one file; an integration test component lists the files it covers in its own tree."""
@@ -41,7 +42,13 @@ def _gcovr_strategy(report_dir: Path) -> Strategy:
             return None
         source_parts = PurePosixPath(source_path).parts
         tree, href = next((match for match in matches if match[0] in source_parts), matches[0])
-        return f"coverage/{tree}/{href}#L{line}"
+        page = f"coverage/{tree}/{href}"
+        # gcovr's github theme marks a line as id="l42", its boost theme as id="L42".
+        anchor = next((line_id for line_id in (f"L{line}", f"l{line}") if line_id in line_ids[tree, href]), None)
+        if anchor is None:
+            logger.warning(f"No line {line} anchor in the coverage page of {source_path}")
+            return page
+        return f"{page}#{anchor}"
 
     return resolve
 
