@@ -3279,7 +3279,7 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'zephyr'", specifier = ">=6" },
     { name = "requests", marker = "extra == 'zephyr'", specifier = ">=2.32.4" },
     { name = "typer", specifier = ">=0,<1" },
-    { name = "yanga-core", specifier = ">=0.17,<1" },
+    { name = "yanga-core", specifier = ">=0.18,<1" },
 ]
 provides-extras = ["zephyr"]
 
@@ -3304,7 +3304,7 @@ dev = [
 
 [[package]]
 name = "yanga-core"
-version = "0.17.0"
+version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "clanguru" },
@@ -3317,9 +3317,9 @@ dependencies = [
     { name = "pypeline-runner" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/1c/614587c3fda96f369997f56351f5dc3fcd0361fea0e46cb94bfc8774f569/yanga_core-0.17.0.tar.gz", hash = "sha256:f326fdf40ada3806bd43026254f297834fe00f3f5770534029c23dbec5ae3346", size = 47451, upload-time = "2026-11-20T14:40:06.259Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/12/efbcd895c509a22713d39ac319bfefe213d91f2342636b8a1687ce48954f/yanga_core-0.18.0.tar.gz", hash = "sha256:fcb9aafba9a05734ab6779539261fcd3be408bdfaaf27714e6e6d4e258f3ffd2", size = 48787, upload-time = "2026-11-22T18:39:46.75Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/04/e1/0579c65d8d55aa1e3f1969a9ac974fd2bca495da3f626dde78664c29d811/yanga_core-0.17.0-py3-none-any.whl", hash = "sha256:9f16d279918327ae61e07118a21a9180e799d35f7e2ac1ac66e808b920ffdaaa", size = 67626, upload-time = "2026-11-20T14:40:05.182Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/3a/b9993c16d9f8f4ca7a8be7de7818ddfed05e20b699af83c0213178ccb95f/yanga_core-0.18.0-py3-none-any.whl", hash = "sha256:0642c2d75f1b8db3d077d80083ae82d3c01bf3c8c1b2a7a044f6e2d47be38f7b", size = 68906, upload-time = "2026-11-22T18:39:45.433Z" },
 ]
 
 [[package]]

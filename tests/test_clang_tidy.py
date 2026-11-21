@@ -290,3 +290,45 @@ def test_generator_registers_html_report_for_each_component_and_the_variant(exec
     assert "--output-file" not in [str(argument) for arguments in report_arguments for argument in arguments]
     output_dirs = [arguments[arguments.index("--output-dir") + 1] for arguments in report_arguments]
     assert index_files == {directory.to_path() / "index.html" for directory in output_dirs if isinstance(directory, CMakePath)}
+
+
+def test_component_report_is_written_and_registered_under_its_own_folder(execution_context: ExecutionContext, output_dir: Path) -> None:
+    elements = ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    locator = CMakeArtifactsLocator(output_dir, execution_context.spl_paths)
+    registered = {entry.target.target_name: entry.html_content.index_html for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.html_content}
+    assert registered == {
+        "CompA_lint": Path("clang_tidy/CompA/index.html"),
+        "CompBNotTestable_lint": Path("clang_tidy/CompBNotTestable/index.html"),
+        "lint": Path("clang_tidy/index.html"),
+    }
+    report_arguments = [command.commands[0].arguments for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy_report"]
+    output_dirs = {str(arguments[arguments.index("--output-dir") + 1]) for arguments in report_arguments}
+    assert output_dirs == {
+        str(locator.get_component_reports_dir("CompA").joinpath("clang_tidy/CompA")),
+        str(locator.get_component_reports_dir("CompBNotTestable").joinpath("clang_tidy/CompBNotTestable")),
+        str(locator.cmake_variant_reports_dir.joinpath("clang_tidy")),
+    }
+
+
+def test_variant_lint_copies_each_component_report_into_the_variant_report(execution_context: ExecutionContext, output_dir: Path) -> None:
+    elements = ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    locator = CMakeArtifactsLocator(output_dir, execution_context.spl_paths)
+    commands = find_elements_of_type(elements, CMakeCustomCommand)
+    copy_commands = {
+        (str(arguments[arguments.index("copy_directory") + 1]), str(arguments[arguments.index("copy_directory") + 2])): command
+        for command in commands
+        for arguments in [step.arguments for step in command.commands]
+        if "copy_directory" in arguments
+    }
+    expected_copies = {
+        (str(locator.get_component_reports_dir(name).joinpath(f"clang_tidy/{name}")), str(locator.cmake_variant_reports_dir.joinpath(f"clang_tidy/{name}")))
+        for name in ["CompA", "CompBNotTestable"]
+    }
+    assert set(copy_commands) == expected_copies
+    for (source_dir, _), command in copy_commands.items():
+        assert f"{source_dir}/index.html" in {str(dependency) for dependency in command.depends or []}
+    [lint_target] = [target for target in find_elements_of_type(elements, CMakeCustomTarget) if target.name == "lint"]
+    lint_dependencies = {str(dependency) for dependency in lint_target.depends or []}
+    assert all({str(output) for output in command.outputs or []} <= lint_dependencies for command in copy_commands.values())

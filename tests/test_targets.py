@@ -87,7 +87,7 @@ def test_dependency_tree_builder(get_test_data_path: Callable[[str], Path]) -> N
 def test_target_dependency_html_builder(get_test_data_path: Callable[[str], Path]) -> None:
     targets_data = TargetsData.from_json_file(get_test_data_path("sample_targets_data.json"))
     content = MarkdownFormatter().format(create_doc_structure(targets_data, ["report"]))
-    assert content
+    assert content.splitlines()[0] == "# Build Targets"
 
 
 def test_create_target_dependencies_file():

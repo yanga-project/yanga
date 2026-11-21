@@ -148,7 +148,7 @@ class TargetDocumentationGenerator:
         - Compute root targets once (was computed twice).
         - Pass pre-computed root targets to summary section.
         """
-        doc = DocStructure("Target Dependencies Documentation")
+        doc = DocStructure("Build Targets")
 
         styles_section = Section("Styles")
         styles_section.add_content(TextContent(DEPENDENCY_TREE_CSS))
@@ -355,7 +355,7 @@ class TargetDocumentationGenerator:
         return "".join(parts)
 
 
-def create_doc_structure(targets_data: TargetsData, targets: list[str], title: str = "Target Dependencies Documentation") -> DocStructure:
+def create_doc_structure(targets_data: TargetsData, targets: list[str], title: str = "Build Targets") -> DocStructure:
     """Utility function to create a DocStructure for targets documentation."""
     generator = TargetDocumentationGenerator(targets_data)
     doc_structure = generator.create_doc_structure(targets)

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from py_app_dev.core.logging import logger
+from py_app_dev.core.subprocess import SubprocessExecutor
 
 from yanga.commands.source_links import ResolveSourceLinksCommand, SourceLinkStrategy, resolve_source_links
 
@@ -133,3 +134,49 @@ def test_command_runs_from_cli(report: Path, tmp_path: Path) -> None:
 
     missing = parser.parse_args(["--report-dir", str(tmp_path / "missing"), "--project-root", str(tmp_path), "--strategies", "gcovr"])
     assert command.run(missing) == 1
+
+
+def git_checkout(project_dir: Path, *remote: str) -> str:
+    def git(*arguments: str) -> str:
+        result = SubprocessExecutor(["git", *arguments], cwd=project_dir, print_output=False).execute(handle_errors=False)
+        return result.stdout.strip() if result else ""
+
+    git("init")
+    git("-c", "user.name=yanga", "-c", "user.email=yanga@example.com", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "init")
+    if remote:
+        git("remote", "add", "origin", *remote)
+    return git("rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize(("path", "line"), [(COVERED, 42), (UNCOVERED, 7)], ids=["production-source", "test-source"])
+def test_repository_links_to_the_code_host_at_the_commit(report: Path, tmp_path: Path, path: str, line: int) -> None:
+    commit = git_checkout(tmp_path, "https://example.com/org/repo.git")
+
+    resolve_source_links(report, tmp_path, [SourceLinkStrategy("repository")])
+
+    assert f'href="https://example.com/org/repo/blob/{commit}/{path}#L{line}"' in (report / PAGE).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(("strategies", "links_to_vscode"), [(["repository", "vscode"], True), (["repository"], False)], ids=["next-strategy", "plain-text"])
+def test_repository_without_origin_falls_back(report: Path, tmp_path: Path, strategies: list[str], links_to_vscode: bool) -> None:
+    git_checkout(tmp_path)
+
+    resolve_source_links(report, tmp_path, [SourceLinkStrategy(strategy) for strategy in strategies])
+
+    content = (report / PAGE).read_text(encoding="utf-8")
+    assert (f'href="vscode://file/{(tmp_path.resolve() / UNCOVERED).as_posix()}:7"' in content) == links_to_vscode
+    assert ("<a" in content) == links_to_vscode
+    assert f"{UNCOVERED}:7" in content
+
+
+@pytest.mark.parametrize("path", ["../modules/hal/src/hal.c", "/opt/sdk/src/hal.c"], ids=["outside-project", "absolute"])
+def test_repository_leaves_sources_outside_the_project_to_the_next_strategy(tmp_path: Path, path: str) -> None:
+    git_checkout(tmp_path, "https://example.com/org/repo.git")
+    report_dir = tmp_path / "report"
+    write(report_dir / PAGE, anchor(path, 3))
+
+    resolve_source_links(report_dir, tmp_path, [SourceLinkStrategy("repository")])
+
+    content = (report_dir / PAGE).read_text(encoding="utf-8")
+    assert f"{path}:3" in content
+    assert "<a" not in content
