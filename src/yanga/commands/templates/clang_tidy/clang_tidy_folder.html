@@ -1,0 +1,41 @@
+{# The folder page of the clang-tidy report: its folders and files with the findings per severity. #}
+{% extends "clang_tidy_base.html" %}
+
+{% block html_title %}{% if path %}{{path}} - {% endif %}{{info.head}}{% endblock %}
+
+{% block breadcrumb %}{% if path %}<a href="{{ROOT_FNAME}}" class="breadcrumb-home">{{info.head}}</a><span class="separator">/</span><span class="current" title="{{path}}">{{path}}</span>{% else %}<span class="breadcrumb-title">{{info.head}}</span><span class="breadcrumb-label">Static Analysis</span>{% endif %}{% endblock %}
+
+{% block content %}
+<style>.file-list-header, .file-row { grid-template-columns: minmax(200px, 2fr) repeat({{severities | length}}, 90px); }</style>
+<div class="file-list-container">
+  <div class="file-list-header">
+    <div class="col-name">Name</div>
+    {% for severity in severities %}
+    <div>{{severity}}</div>
+    {% endfor %}
+  </div>
+  <div class="file-list-body">
+    {% for row in rows %}
+    <div class="file-row {% if row.isDirectory %}directory{% else %}file{% endif %}">
+      <div class="col-name"><a href="{{row.link}}" title="{{row.name}}">{{row.name}}</a></div>
+      {% for count in row.counts %}
+      <div>{{count}}</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% if parse_failures is defined %}
+<h2>Parse failures</h2>
+{% if parse_failures %}
+<p>clang could not parse these files, so they are not analysed. A missing preprocessor guard around compiler-specific code is the usual cause.</p>
+<ul>
+  {% for failure in parse_failures %}
+  <li><code>{{failure.location}}</code>: {{failure.message}}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>No parse failures.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

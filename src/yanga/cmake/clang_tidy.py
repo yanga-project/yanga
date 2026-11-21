@@ -3,10 +3,10 @@ from typing import Any
 
 from yanga_core.domain.components import Component
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
-from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
+from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType, ReportRelevantHtmlContent
 
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
-from yanga.cmake.cmake_backend import CMakeCommand, CMakeComment, CMakeCustomCommand, CMakeCustomTarget, CMakeElement, CMakePath
+from yanga.cmake.cmake_backend import CMakeAddTargetCleanFiles, CMakeCommand, CMakeComment, CMakeCustomCommand, CMakeCustomTarget, CMakeElement, CMakePath
 from yanga.cmake.generator import CMakeGenerator
 
 
@@ -84,42 +84,50 @@ class ClangTidyCMakeGenerator(CMakeGenerator):
             ],
         )
 
-    def _create_report_command(self, description: str, input_files: list[CMakePath], report_file: CMakePath) -> CMakeCustomCommand:
-        return CMakeCustomCommand(
-            description=description,
-            outputs=[report_file],
-            depends=input_files,
-            commands=[
-                CMakeCommand(
-                    "yanga_cmd",
-                    [
-                        "clang_tidy_report",
-                        "--input-files",
-                        *input_files,
-                        "--output-file",
-                        report_file,
-                        "--project-dir",
-                        CMakePath(self.execution_context.project_root_dir),
-                    ],
-                )
-            ],
-        )
-
-    def _create_component_report(self, component: Component, input_files: list[CMakePath]) -> list[CMakeElement]:
-        report_file = self.artifacts_locator.get_component_build_dir(component.name).joinpath("clang_tidy_report.md")
-        lint_target = UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=UserRequestTarget.LINT)
+    def _create_report(self, lint_target: UserRequest, target_description: str, scope: str, input_files: list[CMakePath], reports_dir: CMakePath) -> list[CMakeElement]:
+        output_dir = reports_dir.joinpath("clang_tidy")
+        index_html = output_dir.joinpath("index.html")
+        # When registering an html content, the path shall be relative to the reports directory
         self.execution_context.data_registry.insert(
-            ReportRelevantFiles(target=lint_target, files_to_be_included=[report_file.to_path()], file_type=ReportRelevantFileType.LINT_RESULT),
+            ReportRelevantFiles(
+                target=lint_target,
+                file_type=ReportRelevantFileType.HTML,
+                files_to_be_included=[],
+                html_content=ReportRelevantHtmlContent(name="Static Analysis Report", index_html=index_html.to_path().relative_to(reports_dir.to_path())),
+            ),
             lint_target.target_name,
         )
         return [
-            self._create_report_command(f"Create clang-tidy report for component {component.name}", input_files, report_file),
-            CMakeCustomTarget(lint_target.target_name, f"Lint the {component.name} component", [], [report_file]),
+            CMakeCustomCommand(
+                description=f"Create clang-tidy report for {scope}",
+                outputs=[index_html],
+                depends=input_files,
+                commands=[
+                    CMakeCommand(
+                        "yanga_cmd",
+                        [
+                            "clang_tidy_report",
+                            "--input-files",
+                            *input_files,
+                            "--output-dir",
+                            output_dir,
+                            "--project-dir",
+                            CMakePath(self.execution_context.project_root_dir),
+                        ],
+                    )
+                ],
+            ),
+            CMakeCustomTarget(lint_target.target_name, target_description, [], [index_html]),
+            # The report command writes pages unknown to ninja. Register the directory for recursive removal on `clean`.
+            CMakeAddTargetCleanFiles(target=lint_target.target_name, files=[output_dir]),
         ]
 
+    def _create_component_report(self, component: Component, input_files: list[CMakePath]) -> list[CMakeElement]:
+        lint_target = UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=UserRequestTarget.LINT)
+        return self._create_report(
+            lint_target, f"Lint the {component.name} component", f"component {component.name}", input_files, self.artifacts_locator.get_component_reports_dir(component.name)
+        )
+
     def _create_variant_report(self, input_files: list[CMakePath]) -> list[CMakeElement]:
-        report_file = self.artifacts_locator.cmake_build_dir.joinpath("clang_tidy_report.md")
-        return [
-            self._create_report_command("Create clang-tidy report for the variant", input_files, report_file),
-            CMakeCustomTarget(UserRequest(UserRequestScope.VARIANT, target=UserRequestTarget.LINT).target_name, "Lint the entire variant", [], [report_file]),
-        ]
+        lint_target = UserRequest(UserRequestScope.VARIANT, target=UserRequestTarget.LINT)
+        return self._create_report(lint_target, "Lint the entire variant", "the variant", input_files, self.artifacts_locator.cmake_variant_reports_dir)

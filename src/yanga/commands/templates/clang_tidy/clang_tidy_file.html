@@ -1,0 +1,28 @@
+{# The file page of the clang-tidy report: its findings. #}
+{% extends "clang_tidy_base.html" %}
+
+{% block html_title %}{{path}} - {{info.head}}{% endblock %}
+
+{% block breadcrumb %}<a href="{{ROOT_FNAME}}" class="breadcrumb-home">{{info.head}}</a><span class="separator">/</span><span class="current" title="{{path}}">{{path}}</span>{% endblock %}
+
+{% block content %}
+<style>.file-list-header, .file-row { grid-template-columns: 80px minmax(200px, 1fr) 90px minmax(200px, 3fr); }</style>
+<div class="file-list-container">
+  <div class="file-list-header">
+    <div>Line</div>
+    <div>Check</div>
+    <div>Severity</div>
+    <div>Message</div>
+  </div>
+  <div class="file-list-body">
+    {% for finding in findings %}
+    <div class="file-row">
+      <div>{{finding.line}}</div>
+      <div>{{finding.check}}</div>
+      <div>{{finding.severity}}</div>
+      <div>{{finding.message}}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
