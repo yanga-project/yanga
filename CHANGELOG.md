@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.49.0 (2026-11-21)
+
+### Features
+
+- Add an html report with folder tree, severities and sarif (yanga-003) ([`9aee768`](https://github.com/yanga-project/yanga/commit/9aee76854048921a93051900e55703f808f14cf9))
+- Analyse only a component's own sources (yanga-002) ([`cd52fbc`](https://github.com/yanga-project/yanga/commit/cd52fbc8026b6c04660de7dd1319c99a1291f436))
+- Take the gcovr line anchor from the coverage page ([`b1d16e7`](https://github.com/yanga-project/yanga/commit/b1d16e7f4378cd66d18b7241793def1fe6efb786))
+
 ## v2.48.0 (2026-11-20)
 
 ### Features
