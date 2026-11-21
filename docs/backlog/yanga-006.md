@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Superseded (2026-11-21)
 priority: Medium
 related: [YANGA-005]
 ---

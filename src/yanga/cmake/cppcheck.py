@@ -6,7 +6,7 @@ from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileTyp
 
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
 from yanga.cmake.cmake_backend import CMakeCommand, CMakeComment, CMakeCustomCommand, CMakeCustomTarget, CMakeElement, CMakePath
-from yanga.cmake.generator import CMakeGenerator
+from yanga.cmake.generator import CMakeGenerator, report_level
 
 
 class CppCheckCMakeGenerator(CMakeGenerator):
@@ -81,6 +81,9 @@ class CppCheckCMakeGenerator(CMakeGenerator):
         elements: list[CMakeElement] = []
         for component in self.execution_context.components:
             sources = component.sources
+            # A container owns no sources; an empty report would only fill the container level with an empty page.
+            if not sources:
+                continue
             component_compile_commands_file = self.artifacts_locator.get_component_build_artifact(component.name, BuildArtifact.COMPILE_COMMANDS)
             xml_report_file = self.artifacts_locator.get_component_build_dir(component.name).joinpath("cppcheck_report.xml")
             md_report_file = self.artifacts_locator.get_component_build_dir(component.name).joinpath("cppcheck_report.md")
@@ -153,6 +156,7 @@ class CppCheckCMakeGenerator(CMakeGenerator):
                         md_report_file.to_path(),
                     ],
                     file_type=ReportRelevantFileType.LINT_RESULT,
+                    tags=[report_level(component), component.name, "static-analysis"],
                 ),
                 component_lint_target.target_name,
             )

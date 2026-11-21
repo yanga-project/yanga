@@ -1,18 +1,19 @@
 # Components
 
-{% for component in report_data.components %}
+{% for component in report_data.components | sort(attribute="path") %}
+{% set files = report_data.files("component", component.name) %}
+{% if files %}
 
-## {{ component.name }}
-
+## {{ component.path or component.name }}
 
 ```{toctree}
 :maxdepth: 1
 
-{% for file in report_data.get_component_files_list(component.name) %}
+{% for file in files %}
 {{ file }}
 {% endfor %}
 
 ```
 
-
+{% endif %}
 {% endfor %}
