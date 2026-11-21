@@ -24,6 +24,8 @@ html_context: dict[str, Any] = {
 include_patterns = [
     "index.md",
     "docs/components.md",
+    "docs/containers.md",
+    "docs/reports.md",
 ]
 
 report_config = SphinxConfig()

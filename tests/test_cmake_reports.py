@@ -220,3 +220,27 @@ def test_resolvers_need_default(execution_context: ExecutionContext, output_dir:
     # mashumaro wraps the nested MissingField in InvalidFieldValue
     assert isinstance(exc_info.value.__context__, MissingField)
     assert exc_info.value.__context__.field_name == "default"
+
+
+@pytest.mark.parametrize(
+    ("name", "expected_tags"),
+    [
+        ("CompA", [{"component", "CompA", "sources"}, {"component", "CompA", "docs"}]),
+        ("IntegA", [{"container", "IntegA", "sources"}, {"container", "IntegA", "docs"}]),
+        ("group", [{"container", "group", "docs"}]),
+    ],
+    ids=["unit", "integration", "container"],
+)
+def test_docs_and_sources_entries_are_tagged_with_level_component_and_kind(tmp_path: Path, output_dir: Path, name: str, expected_tags: list[set[str]]) -> None:
+    docs = DocsConfig(sources=["index.md"])
+    configs = [
+        ComponentConfig(name="CompA", path=Path("compA"), sources=["a.c"], docs=docs),
+        ComponentConfig(name="IntegA", path=Path("integ"), sources=["glue.c"], integrates=["CompA"], docs=docs),
+        ComponentConfig(name="group", path=Path("group"), subcomponents=["CompC"], docs=docs),
+        ComponentConfig(name="CompC", path=Path("compC"), sources=["c.c"]),
+    ]
+    execution_context = make_execution_context(tmp_path, configs, ["CompA", "IntegA", "group"])
+
+    ReportCMakeGenerator(execution_context, output_dir).create_components_cmake_elements()
+
+    assert [set(entry.tags) for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.component_name == name] == expected_tags

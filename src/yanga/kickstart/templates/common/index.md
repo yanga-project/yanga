@@ -39,7 +39,16 @@
 :caption: Contents
 
 /docs/components
-{% for file in report_data.get_variant_files_list() %}
+{% if report_data.files("container") %}
+/docs/containers
+{% endif %}
+{% for file in report_data.files("variant", "configuration") %}
+{{ file }}
+{% endfor %}
+{% if report_data.files("merged") or report_data.files("variant", "test") or report_data.files("variant", "coverage") or report_data.files("overall") %}
+/docs/reports
+{% endif %}
+{% for file in report_data.untagged() %}
 {{ file }}
 {% endfor %}
 

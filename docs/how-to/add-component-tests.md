@@ -124,7 +124,7 @@ variants:
 - **Mocking:** automock mocks only what the selected components together leave undefined, such as platform adapters. Calls between the selected components are not mocked. Include `mockup_variant_test.h` in the test to use the mocks; `mockup_sources` and `config` work as for a component.
 - **Integration components:** the variant test does not link an integration component, because its objects are second copies of the components it integrates.
 - **`main`:** if a selected component defines `main()`, the linker takes it instead of the `main` of GoogleTest, and the executable runs the product, not the tests. Select such a component only on the platforms that build the product, as `main` above.
-- **Results:** `yanga run --platform gtest --target test` builds and runs the variant test (the default target runs it too). The variant report shows its JUnit result (with `SphinxTestReportCMakeGenerator`) and its coverage on its own page, **Variant Test Coverage**. The merged **Coverage Report** of the component tests is unchanged.
+- **Results:** `yanga run --platform gtest --target test` builds and runs the variant test (the default target runs it too). The variant report shows its JUnit result (with `SphinxTestReportCMakeGenerator`) and its coverage on its own **Coverage** page. Every coverage page has this title; the chapter that includes it gives the level. The variant test also counts in the overall coverage; the merged coverage of all components holds only the component unit tests (see the report entry tags in the CMake reference).
 - **Platforms:** only a platform with `GTestCMakeGenerator` builds the variant test. A variant without a `gtest` block builds as before.
 
 ## See also

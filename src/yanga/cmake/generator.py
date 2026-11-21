@@ -2,12 +2,23 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from yanga_core.domain.components import Component
 from yanga_core.domain.execution_context import ExecutionContext
 from yanga_core.domain.generated_file import GeneratedFile, GeneratedFileIf
 
 from .cmake_backend import CMakeElement
 
-__all__ = ["CMakeFile", "CMakeGenerator", "GeneratedFile", "GeneratedFileIf"]
+__all__ = ["CMakeFile", "CMakeGenerator", "GeneratedFile", "GeneratedFileIf", "report_level", "subcomponent_names"]
+
+
+def subcomponent_names(component: Component) -> list[str]:
+    """Down to the components that are not containers, like the container test target."""
+    return [name for subcomponent in component.subcomponents for name in [subcomponent.name, *subcomponent_names(subcomponent)]]
+
+
+def report_level(component: Component) -> str:
+    """The report level tag of a component's entries: an integration component tests a group of components, like a container."""
+    return "container" if component.is_container or component.integrates else "component"
 
 
 class CMakeGenerator(ABC):

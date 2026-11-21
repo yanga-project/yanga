@@ -13,7 +13,7 @@ from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileTyp
 
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
 from yanga.cmake.cmake_backend import CMakeAddTargetCleanFiles, CMakeCommand, CMakeComment, CMakeCustomTarget, CMakeElement, CMakePath
-from yanga.cmake.generator import CMakeGenerator
+from yanga.cmake.generator import CMakeGenerator, report_level
 from yanga.cmake.sphinx_test_report import TestResultFile
 from yanga.commands.source_links import SourceLinkStrategy
 
@@ -205,6 +205,7 @@ class ReportCMakeGenerator(CMakeGenerator):
             )
 
             docs_source_files = [CMakePath(source) for source in component.docs_sources]
+            level = report_level(component)
             # Docs files need no generation, but they register against the docs target, so it must exist.
             if source_files_output_md or docs_source_files:
                 elements.append(
@@ -245,6 +246,7 @@ class ReportCMakeGenerator(CMakeGenerator):
                         files_to_be_included=[sources_page],
                         all_files=source_pages,
                         file_type=ReportRelevantFileType.SOURCES,
+                        tags=[level, component.name, "sources"],
                     ),
                     component_docs_target.target_name,
                 )
@@ -256,6 +258,7 @@ class ReportCMakeGenerator(CMakeGenerator):
                         target=component_docs_target,
                         files_to_be_included=[source.to_path() for source in docs_source_files],
                         file_type=ReportRelevantFileType.DOCS,
+                        tags=[level, component.name, "docs"],
                     ),
                     component_docs_target.target_name,
                 )

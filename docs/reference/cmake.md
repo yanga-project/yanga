@@ -56,7 +56,16 @@ This generator facilitates unit testing using the Google Test framework. For eac
 
 The coverage reports are gcovr HTML reports in nested mode with the `boost.blue` theme: a sidebar shows the files as a folder tree under their common path, and a switch shows them as a flat list. The entry page of each report is `index.html`.
 
-A container component compiles nothing itself; its `test` and `build` targets run the tests of its subcomponents. An integration component needs no special handling: it is a component whose sources include those of the components it integrates.
+A container component compiles nothing itself; its `test` and `build` targets run the tests of its subcomponents. An integration component is a component whose sources include those of the components it integrates; it builds like any component, and all its results are container level results (see [Report entry tags](#report-entry-tags)).
+
+Besides the coverage of each component and of the variant test, the generator merges the coverage per level. It reads only the gcovr JSON tracefiles, so unit and integration counters never mix in a component page or in the all components page.
+
+* `coverage`: all unit components, in `coverage/index.html` of the variant reports directory.
+* `<container>_coverage`: the subcomponents of the container, in the container report. `overall_coverage` copies it to `coverage/<container>` of the variant reports directory.
+* `all_containers_coverage`: the subcomponents of every container and every integration component, in `all_containers_coverage/index.html`.
+* `overall_coverage`: every component test and the variant test, in `overall_coverage/index.html`.
+
+Every coverage page is named **Coverage**; the chapter that includes it gives the level. A level without any tracefile gets no target and no report entry. The report entries carry tags, see [Report entry tags](#report-entry-tags).
 
 **Configuration:**
 
@@ -77,13 +86,13 @@ platforms:
 
 ## `CppCheckCMakeGenerator`
 
-This generator integrates `cppcheck`, a static analysis tool for C/C++ code. It creates targets to run `cppcheck` on a per-component basis and for the entire variant. The results are generated as XML and then converted to Markdown for inclusion in reports.
+This generator integrates `cppcheck`, a static analysis tool for C/C++ code. It creates targets to run `cppcheck` on a per-component basis and for the entire variant. The results are generated as XML and then converted to Markdown for inclusion in reports. `cppcheck` reports per component only; the merged container and variant static analysis levels come from `ClangTidyCMakeGenerator`.
 
 **Use Case:** Performing static code analysis to find bugs and improve code quality.
 
 **Configuration:**
 
-This generator is typically added as a step without specific configuration.
+This generator is typically added as a step without specific configuration. It tags each component report as static analysis, see [Report entry tags](#report-entry-tags).
 
 ```yaml
 platforms:
@@ -95,7 +104,16 @@ platforms:
 
 ## `SphinxTestReportCMakeGenerator`
 
-This generator renders the GoogleTest results for the reports. For every component or variant JUnit report that `GTestCMakeGenerator` registers, it writes a `<component>_test_report.rst` page (`<variant>_test_report.rst` for the variant test) with a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive (JUnit file relative to the project root, results expanded) and registers it as the component test result. The page then shows as **Test Report** in the component chapter, next to the coverage report. The project must load the `sphinx_test_reports` extension in its `conf.py`.
+This generator renders the GoogleTest results for the reports. For every component or variant JUnit report that `GTestCMakeGenerator` registers, it writes a `<component>_test_report.rst` page (`<variant>_test_report.rst` for the variant test) with a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive (JUnit file relative to the project root, results expanded) and registers it as the component test result. The page heading is **Test Results**, the same on every test page; the chapter that includes it gives the level. The project must load the `sphinx_test_reports` extension in its `conf.py`.
+
+It also writes merged pages. For each JUnit file of its level, a page has a heading with the test's name and a `test-report` block like the one on the test page. sphinx-test-reports derives the need IDs from the block's `:id:`, so each id holds the page and the test (`TR_<PAGE>__<TEST>`, where `<PAGE>` is the container name, `ALL_COMPONENTS`, `ALL_CONTAINERS` or `OVERALL`). One JUnit file on several pages then makes distinct needs, and the double underscore keeps a merged id apart from a test page id `TR_<NAME>`.
+
+* `<container>_test_report.rst`: the tests of the container's subcomponents, in the container report.
+* `all_components_test_report.rst` (target `all_components_test`): the tests of all unit components.
+* `all_containers_test_report.rst` (target `all_containers_test`): the tests of the components inside containers and of the integration components.
+* `overall_test_report.rst` (target `overall_test`): every test, the variant test included.
+
+A level without any JUnit file gets no page and no target. The report entries carry tags, see [Report entry tags](#report-entry-tags).
 
 **Use Case:** Showing test results in the component and variant reports, and linking them to test specifications with sphinx-needs.
 
@@ -123,10 +141,11 @@ This generator integrates `clang-tidy`, which ships with the clang toolchain and
 * clang-tidy runs once per production source file, so a rebuild analyses only the files that changed. Test sources are not analysed. A change to the `.clang-tidy` file in the project root reruns all files; nested `.clang-tidy` files are not tracked.
 * An integration component is analysed only for the sources it declares itself. The files it integrates are analysed under their own component.
 * Warnings in headers are reported only for headers below the component include directories, so toolchain headers stay out of the report.
-* `lint` writes an HTML report to `clang_tidy/index.html` in the variant reports directory, `<component>_lint` to `clang_tidy/<component>/index.html` in the component reports directory. The variant and component reports link it. `lint` copies each component report to `clang_tidy/<component>` in the variant reports directory. It looks like the coverage report (gcovr's boost theme: its style and script come from the installed gcovr, the page frame is a copy without the Boost logo, the Nested/Flat switch and the gcovr footer): the entry page shows the folders and files with findings as a tree, with the number of findings per severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `STYLE`) on each folder and file. Folders with a single folder inside are one row. Each file has a page that lists its findings with line, check, severity and message. Paths are relative to the project root; a file outside the project root keeps its absolute path. A finding in a header that several source files include is listed once.
+* `lint` writes an HTML report to `clang_tidy/index.html` in the variant reports directory, `<component>_lint` to `clang_tidy/<component>/index.html` in the component reports directory. The variant and component reports link it. `lint` reports the findings of all components that are neither containers nor integration components. `overall_lint` reports every finding to `overall_clang_tidy/index.html` in the variant reports directory and copies each component report to `clang_tidy/<component>` in the variant reports directory. It looks like the coverage report (gcovr's boost theme: its style and script come from the installed gcovr, the page frame is a copy without the Boost logo, the Nested/Flat switch and the gcovr footer): the entry page shows the folders and files with findings as a tree, with the number of findings per severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `STYLE`) on each folder and file. Folders with a single folder inside are one row. Each file has a page that lists its findings with line, check, severity and message. Paths are relative to the project root; a file outside the project root keeps its absolute path. A finding in a header that several source files include is listed once.
 * The severity of a check comes from the severity table of [CodeChecker](https://github.com/Ericsson/codechecker) 6.29.3 (Apache-2.0 WITH LLVM-exception), which yanga ships. A check that is not in the table gets `MEDIUM`.
 * Next to the HTML, `clang_tidy_report.sarif` holds every finding and parse failure in SARIF 2.1.0, so other tools (for example a code scanning service or a findings database) can read them. Each result has the check as `ruleId`, the file and line, the message, the `level` (`warning` for a finding, `error` for a parse failure) and the severity as the `severity` property. A file inside the project is a relative URI with the `uriBaseId` `PROJECTROOT`, which `originalUriBaseIds` maps to the project root; a file outside it is a `file://` URI.
 * Files that clang cannot parse are listed in their own **Parse failures** section on the entry page. Findings and parse failures never fail the build.
+* `<container>_lint` reports the findings of the container's subcomponents to `clang_tidy/<container>` in the container reports directory, and `overall_lint` copies it into the variant reports directory. `all_containers_lint` reports the findings of all containers and integration components to `all_containers_clang_tidy` in the variant reports directory. Every static analysis page is named **Static Analysis**; the chapter that includes it gives the level. A container without analysed sources gets no report. The report entries carry tags, see [Report entry tags](#report-entry-tags).
 
 **Use Case:** Static code analysis without installing a separate tool next to clang.
 
@@ -155,7 +174,7 @@ This generator orchestrates the creation of comprehensive HTML reports for both 
 * Static analysis reports (from `CppCheckCMakeGenerator` or `ClangTidyCMakeGenerator`).
 * Coverage reports (from `GTestCMakeGenerator`) and test reports (from `SphinxTestReportCMakeGenerator`).
 
-It registers the variant report (`<variant build dir>/reports/index.html`) as a `PublishedFile` for the SPL overview, so a `WritePublishManifest` at the end of the build links it when the `report` target ran.
+It tags the docs and sources pages, see [Report entry tags](#report-entry-tags). It registers the variant report (`<variant build dir>/reports/index.html`) as a `PublishedFile` for the SPL overview, so a `WritePublishManifest` at the end of the build links it when the `report` target ran.
 
 **Use Case:** Generating detailed documentation and quality assurance reports.
 
@@ -192,6 +211,50 @@ Strategies:
 The profile is `ci` when the `CIContext` from the `CheckCIContext` step of pypeline-semantic-release says `is_ci`. Otherwise it is `local`, also when there is no `CIContext`. A profile that is not configured falls back to `default`.
 
 The links are resolved after `fix_html_links`. A link that no strategy resolves shows as plain text. The `conf.py` of the project must add `source` to `myst_url_schemes`.
+
+## Report entry tags
+
+Each report entry that a generator registers carries tags. A report template uses them to place each result where it wants it. Build targets and object dependencies have no tags.
+
+A tag says one of three things:
+
+* The level: `component`, `container`, `variant`, `overall`, or `merged` for a page that merges a level.
+* The kind: `docs`, `sources`, `test`, `coverage` or `static-analysis`; yanga-core's `KConfigGen` tags the feature configuration `[variant, configuration]`.
+* The component name, on the entries of one component or container.
+
+The levels:
+
+* A unit component is neither a container nor an integration component. Its results are `component` results.
+* An integration component (one with `integrates`) tests a group of components, like a container. All its results (docs, sources, test, coverage and static analysis) are `container` results.
+* A container has `container` results, merged over its subcomponents, down to the components that are not containers.
+
+The tags of each generator:
+
+* `ReportCMakeGenerator`: docs page `[<level>, <name>, docs]`, sources page `[<level>, <name>, sources]`.
+* `SphinxTestReportCMakeGenerator`: test page `[<level>, <name>, test]`, variant test page `[variant, test]`, container page `[container, <name>, test]`, all components `[component, merged, test]`, all containers `[container, merged, test]`, overall `[overall, test]`.
+* `GTestCMakeGenerator`: component coverage `[<level>, <name>, coverage]`, variant test `[variant, coverage]`, container `[container, <name>, coverage]`, all components `[component, merged, coverage]`, all containers `[container, merged, coverage]`, overall `[overall, coverage]`.
+* `ClangTidyCMakeGenerator`: component `[<level>, <name>, static-analysis]`, container `[container, <name>, static-analysis]`, all containers `[container, merged, static-analysis]`, all components (`lint`) `[component, merged, static-analysis]`, overall (`overall_lint`) `[overall, static-analysis]`.
+* `CppCheckCMakeGenerator`: component `[<level>, <name>, static-analysis]`. A component without sources, a container for example, gets no report.
+
+The level of a component's own entries is `container` for a container or an integration component, else `component`. A level with nothing in it registers no entry, so there is no empty page.
+
+In `index.md`, `report_data.files(...)` gives the toctree lines of the entries that carry all the given tags. For example, a coverage chapter with the merged pages:
+
+````md
+```{toctree}
+:caption: Coverage
+:maxdepth: 1
+
+{% for file in report_data.files("merged", "coverage") %}
+{{ file }}
+{% endfor %}
+{% for file in report_data.files("overall", "coverage") %}
+{{ file }}
+{% endfor %}
+```
+````
+
+The project that `yanga init` creates lays out its variant report this way: a Components chapter and a Containers chapter with the entries of each component and container, the feature configuration, a Reports chapter with All components, All containers, Variant and Overall, and the untagged entries last (`index.md`, `docs/components.md`, `docs/containers.md`, `docs/reports.md`).
 
 ## Auto-emitted targets
 

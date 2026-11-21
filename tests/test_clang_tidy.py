@@ -219,8 +219,8 @@ def test_header_filter_matches_include_directories_with_both_separators(header: 
 @pytest.mark.parametrize(
     ("context_fixture", "expected_targets", "expected_tidy_commands"),
     [
-        ("execution_context", ["CompA_lint", "CompBNotTestable_lint", "lint"], 2),
-        ("container_execution_context", ["tcp_lint", "udp_lint", "lint"], 2),
+        ("execution_context", ["CompA_lint", "CompBNotTestable_lint", "lint", "overall_lint"], 2),
+        ("container_execution_context", ["tcp_lint", "udp_lint", "group_lint", "net_lint", "all_containers_lint", "lint", "overall_lint"], 2),
     ],
     ids=["components", "containers-without-sources-skipped"],
 )
@@ -230,7 +230,7 @@ def test_generate_one_clang_tidy_step_per_source(
     execution_context: ExecutionContext = request.getfixturevalue(context_fixture)
     elements = ClangTidyCMakeGenerator(execution_context, output_dir).generate()
 
-    assert [target.name for target in find_elements_of_type(elements, CMakeCustomTarget)] == expected_targets
+    assert sorted(target.name for target in find_elements_of_type(elements, CMakeCustomTarget)) == sorted(expected_targets)
     tidy_commands = [command for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy"]
     assert len(tidy_commands) == expected_tidy_commands
     assert all(len(command.depends or []) == 2 for command in tidy_commands)
@@ -239,10 +239,10 @@ def test_generate_one_clang_tidy_step_per_source(
 @pytest.mark.parametrize(
     ("test_net_sources", "expected_targets", "expected_descriptions"),
     [
-        ([], ["tcp_lint", "udp_lint", "lint"], ["Run clang-tidy for tcp tcp.cpp", "Run clang-tidy for udp udp.cpp"]),
+        ([], ["tcp_lint", "udp_lint", "lint", "overall_lint"], ["Run clang-tidy for tcp tcp.cpp", "Run clang-tidy for udp udp.cpp"]),
         (
             ["glue.cpp"],
-            ["tcp_lint", "udp_lint", "test_net_lint", "lint"],
+            ["tcp_lint", "udp_lint", "test_net_lint", "all_containers_lint", "lint", "overall_lint"],
             ["Run clang-tidy for tcp tcp.cpp", "Run clang-tidy for udp udp.cpp", "Run clang-tidy for test_net glue.cpp"],
         ),
     ],
@@ -258,7 +258,7 @@ def test_generate_clang_tidy_steps_only_for_own_sources(
     ]
     elements = ClangTidyCMakeGenerator(make_execution_context(tmp_path, configs), output_dir).generate()
 
-    assert [target.name for target in find_elements_of_type(elements, CMakeCustomTarget)] == expected_targets
+    assert sorted(target.name for target in find_elements_of_type(elements, CMakeCustomTarget)) == sorted(expected_targets)
     tidy_commands = [command for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy"]
     assert [command.description for command in tidy_commands] == expected_descriptions
 
@@ -278,7 +278,7 @@ def test_generator_registers_html_report_for_each_component_and_the_variant(exec
 
     locator = CMakeArtifactsLocator(output_dir, execution_context.spl_paths)
     registered = execution_context.data_registry.find_data(ReportRelevantFiles)
-    assert {entry.target.target_name for entry in registered} == {"CompA_lint", "CompBNotTestable_lint", "lint"}
+    assert {entry.target.target_name for entry in registered} == {"CompA_lint", "CompBNotTestable_lint", "lint", "overall_lint"}
     assert all(entry.file_type == ReportRelevantFileType.HTML and entry.html_content for entry in registered)
     index_files = {
         (locator.get_component_reports_dir(entry.target.component_name) if entry.target.component_name else locator.cmake_variant_reports_dir).to_path()
@@ -301,6 +301,7 @@ def test_component_report_is_written_and_registered_under_its_own_folder(executi
         "CompA_lint": Path("clang_tidy/CompA/index.html"),
         "CompBNotTestable_lint": Path("clang_tidy/CompBNotTestable/index.html"),
         "lint": Path("clang_tidy/index.html"),
+        "overall_lint": Path("overall_clang_tidy/index.html"),
     }
     report_arguments = [command.commands[0].arguments for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy_report"]
     output_dirs = {str(arguments[arguments.index("--output-dir") + 1]) for arguments in report_arguments}
@@ -308,6 +309,7 @@ def test_component_report_is_written_and_registered_under_its_own_folder(executi
         str(locator.get_component_reports_dir("CompA").joinpath("clang_tidy/CompA")),
         str(locator.get_component_reports_dir("CompBNotTestable").joinpath("clang_tidy/CompBNotTestable")),
         str(locator.cmake_variant_reports_dir.joinpath("clang_tidy")),
+        str(locator.cmake_variant_reports_dir.joinpath("overall_clang_tidy")),
     }
 
 
@@ -329,6 +331,135 @@ def test_variant_lint_copies_each_component_report_into_the_variant_report(execu
     assert set(copy_commands) == expected_copies
     for (source_dir, _), command in copy_commands.items():
         assert f"{source_dir}/index.html" in {str(dependency) for dependency in command.depends or []}
-    [lint_target] = [target for target in find_elements_of_type(elements, CMakeCustomTarget) if target.name == "lint"]
+    targets = {target.name: {str(dependency) for dependency in target.depends or []} for target in find_elements_of_type(elements, CMakeCustomTarget)}
+    copy_stamps = {str(output) for command in copy_commands.values() for output in command.outputs or []}
+    assert copy_stamps <= targets["overall_lint"]
+    assert not copy_stamps & targets["lint"]
+
+
+def test_component_reports_are_tagged_as_component_static_analysis(tmp_path: Path, output_dir: Path) -> None:
+    configs = [
+        ComponentConfig(name="tcp", path=Path("tcp"), sources=["tcp.cpp"]),
+        ComponentConfig(name="test_net", path=Path("itest"), sources=["glue.cpp"], integrates=["tcp"]),
+    ]
+    execution_context = make_execution_context(tmp_path, configs)
+
+    ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    tags = {entry.target.component_name: set(entry.tags) for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.component_name}
+    assert tags == {"tcp": {"component", "tcp", "static-analysis"}, "test_net": {"container", "test_net", "static-analysis"}}
+
+
+def test_integration_component_outputs_count_in_all_containers_static_analysis(tmp_path: Path, output_dir: Path) -> None:
+    configs = [
+        ComponentConfig(name="tcp", path=Path("tcp"), sources=["tcp.cpp"]),
+        ComponentConfig(name="test_net", path=Path("itest"), sources=["glue.cpp"], integrates=["tcp"]),
+    ]
+    execution_context = make_execution_context(tmp_path, configs)
+
+    elements = ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    [entry] = [entry for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.target_name == "all_containers_lint"]
+    assert set(entry.tags) == {"container", "merged", "static-analysis"}
+    report_dir = "${CMAKE_BUILD_DIR}/reports/all_containers_clang_tidy"
+    [arguments] = [
+        arguments
+        for arguments in ([str(argument) for argument in command.commands[0].arguments] for command in find_elements_of_type(elements, CMakeCustomCommand))
+        if arguments[0] == "clang_tidy_report" and arguments[arguments.index("--output-dir") + 1] == report_dir
+    ]
+    assert arguments[arguments.index("--input-files") + 1 : arguments.index("--output-dir")] == ["${CMAKE_BUILD_DIR}/test_net/clang_tidy/glue.cpp.txt"]
+
+
+def nested_container_context(tmp_path: Path) -> ExecutionContext:
+    configs = [
+        ComponentConfig(name="CompA", path=Path("compA"), sources=["CompA.cpp"]),
+        ComponentConfig(name="group", subcomponents=["net"]),
+        ComponentConfig(name="net", subcomponents=["tcp", "udp"]),
+        ComponentConfig(name="tcp", path=Path("tcp"), sources=["tcp.cpp"]),
+        ComponentConfig(name="udp", path=Path("udp"), sources=["udp.cpp"]),
+        ComponentConfig(name="test_net", path=Path("itest"), sources=["test_net.cpp"], integrates=["tcp"]),
+    ]
+    return make_execution_context(tmp_path, configs, ["CompA", "group", "test_net"])
+
+
+@pytest.mark.parametrize(
+    ("target_name", "expected_tags", "index_html", "reports_dir", "analysed_components"),
+    [
+        ("lint", {"component", "merged", "static-analysis"}, "clang_tidy/index.html", "reports", ["CompA", "tcp", "udp"]),
+        ("net_lint", {"container", "net", "static-analysis"}, "clang_tidy/net/index.html", "net/reports", ["tcp", "udp"]),
+        ("group_lint", {"container", "group", "static-analysis"}, "clang_tidy/group/index.html", "group/reports", ["tcp", "udp"]),
+        ("all_containers_lint", {"container", "merged", "static-analysis"}, "all_containers_clang_tidy/index.html", "reports", ["tcp", "udp", "test_net"]),
+        ("overall_lint", {"overall", "static-analysis"}, "overall_clang_tidy/index.html", "reports", ["CompA", "tcp", "udp", "test_net"]),
+    ],
+)
+def test_merged_static_analysis_reads_the_outputs_of_its_level(
+    tmp_path: Path, output_dir: Path, target_name: str, expected_tags: set[str], index_html: str, reports_dir: str, analysed_components: list[str]
+) -> None:
+    execution_context = nested_container_context(tmp_path)
+
+    elements = ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    [entry] = [entry for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.target_name == target_name]
+    assert set(entry.tags) == expected_tags
+    assert entry.html_content is not None
+    assert entry.html_content.index_html == Path(index_html)
+    report_dir = f"${{CMAKE_BUILD_DIR}}/{reports_dir}/{Path(index_html).parent.as_posix()}"
+    report_arguments = [
+        [str(argument) for argument in command.commands[0].arguments]
+        for command in find_elements_of_type(elements, CMakeCustomCommand)
+        if command.commands[0].arguments[0] == "clang_tidy_report"
+    ]
+    [arguments] = [arguments for arguments in report_arguments if arguments[arguments.index("--output-dir") + 1] == report_dir]
+    input_files = arguments[arguments.index("--input-files") + 1 : arguments.index("--output-dir")]
+    assert set(input_files) == {f"${{CMAKE_BUILD_DIR}}/{name}/clang_tidy/{name}.cpp.txt" for name in analysed_components}
+    assert target_name in [target.name for target in find_elements_of_type(elements, CMakeCustomTarget)]
+
+
+def test_overall_lint_copies_each_container_report_into_the_variant_report(tmp_path: Path, output_dir: Path) -> None:
+    elements = ClangTidyCMakeGenerator(nested_container_context(tmp_path), output_dir).generate()
+
+    copy_commands = {
+        (str(step.arguments[step.arguments.index("copy_directory") + 1]), str(step.arguments[step.arguments.index("copy_directory") + 2])): command
+        for command in find_elements_of_type(elements, CMakeCustomCommand)
+        for step in command.commands
+        if "copy_directory" in step.arguments
+    }
+    [lint_target] = [target for target in find_elements_of_type(elements, CMakeCustomTarget) if target.name == "overall_lint"]
     lint_dependencies = {str(dependency) for dependency in lint_target.depends or []}
-    assert all({str(output) for output in command.outputs or []} <= lint_dependencies for command in copy_commands.values())
+    for name in ["net", "group"]:
+        source_dir = f"${{CMAKE_BUILD_DIR}}/{name}/reports/clang_tidy/{name}"
+        command = copy_commands[(source_dir, f"${{CMAKE_BUILD_DIR}}/reports/clang_tidy/{name}")]
+        assert f"{source_dir}/index.html" in {str(dependency) for dependency in command.depends or []}
+        assert {str(output) for output in command.outputs or []} <= lint_dependencies
+
+
+@pytest.mark.parametrize(
+    ("configs", "expected_targets"),
+    [
+        ([ComponentConfig(name="tcp", path=Path("tcp"), sources=["tcp.cpp"])], {"tcp_lint", "lint", "overall_lint"}),
+        (
+            [ComponentConfig(name="tcp", path=Path("tcp")), ComponentConfig(name="test_net", path=Path("itest"), sources=["glue.cpp"], integrates=["tcp"])],
+            {"test_net_lint", "all_containers_lint", "overall_lint"},
+        ),
+        ([ComponentConfig(name="tcp", path=Path("tcp"))], set()),
+    ],
+    ids=["only-unit-outputs", "no-unit-outputs", "no-outputs"],
+)
+def test_merged_static_analysis_is_left_out_for_an_empty_level(tmp_path: Path, output_dir: Path, configs: list[ComponentConfig], expected_targets: set[str]) -> None:
+    execution_context = make_execution_context(tmp_path, configs)
+
+    elements = ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    assert {entry.target.target_name for entry in execution_context.data_registry.find_data(ReportRelevantFiles)} == expected_targets
+    assert {target.name for target in find_elements_of_type(elements, CMakeCustomTarget)} == expected_targets
+
+
+@pytest.mark.parametrize("target_name", ["tcp_lint", "net_lint", "test_net_lint", "lint", "all_containers_lint", "overall_lint"])
+def test_every_static_analysis_page_is_named_static_analysis(tmp_path: Path, output_dir: Path, target_name: str) -> None:
+    execution_context = nested_container_context(tmp_path)
+
+    ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    [entry] = [entry for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.target_name == target_name]
+    assert entry.html_content is not None
+    assert entry.html_content.name == "Static Analysis"
