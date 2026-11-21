@@ -95,7 +95,7 @@ platforms:
 
 ## `SphinxTestReportCMakeGenerator`
 
-This generator renders the GoogleTest results for the reports. For every component or variant JUnit report that `GTestCMakeGenerator` registers, it writes a `<component>_test_report.rst` page (`<variant>_test_report.rst` for the variant test) with a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive and registers it as the component test result. The page then shows as **Test Report** in the component chapter, next to the coverage report. The project must load the `sphinx_test_reports` extension in its `conf.py`.
+This generator renders the GoogleTest results for the reports. For every component or variant JUnit report that `GTestCMakeGenerator` registers, it writes a `<component>_test_report.rst` page (`<variant>_test_report.rst` for the variant test) with a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive (JUnit file relative to the project root, results expanded) and registers it as the component test result. The page then shows as **Test Report** in the component chapter, next to the coverage report. The project must load the `sphinx_test_reports` extension in its `conf.py`.
 
 **Use Case:** Showing test results in the component and variant reports, and linking them to test specifications with sphinx-needs.
 
@@ -123,7 +123,7 @@ This generator integrates `clang-tidy`, which ships with the clang toolchain and
 * clang-tidy runs once per production source file, so a rebuild analyses only the files that changed. Test sources are not analysed. A change to the `.clang-tidy` file in the project root reruns all files; nested `.clang-tidy` files are not tracked.
 * An integration component is analysed only for the sources it declares itself. The files it integrates are analysed under their own component.
 * Warnings in headers are reported only for headers below the component include directories, so toolchain headers stay out of the report.
-* `lint` and `<component>_lint` write an HTML report to `clang_tidy/index.html` in the variant or component reports directory. The variant and component reports link it. It looks like the coverage report (gcovr's boost theme: its style and script come from the installed gcovr, the page frame is a copy without the Boost logo, the Nested/Flat switch and the gcovr footer): the entry page shows the folders and files with findings as a tree, with the number of findings per severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `STYLE`) on each folder and file. Folders with a single folder inside are one row. Each file has a page that lists its findings with line, check, severity and message. Paths are relative to the project root; a file outside the project root keeps its absolute path. A finding in a header that several source files include is listed once.
+* `lint` writes an HTML report to `clang_tidy/index.html` in the variant reports directory, `<component>_lint` to `clang_tidy/<component>/index.html` in the component reports directory. The variant and component reports link it. `lint` copies each component report to `clang_tidy/<component>` in the variant reports directory. It looks like the coverage report (gcovr's boost theme: its style and script come from the installed gcovr, the page frame is a copy without the Boost logo, the Nested/Flat switch and the gcovr footer): the entry page shows the folders and files with findings as a tree, with the number of findings per severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `STYLE`) on each folder and file. Folders with a single folder inside are one row. Each file has a page that lists its findings with line, check, severity and message. Paths are relative to the project root; a file outside the project root keeps its absolute path. A finding in a header that several source files include is listed once.
 * The severity of a check comes from the severity table of [CodeChecker](https://github.com/Ericsson/codechecker) 6.29.3 (Apache-2.0 WITH LLVM-exception), which yanga ships. A check that is not in the table gets `MEDIUM`.
 * Next to the HTML, `clang_tidy_report.sarif` holds every finding and parse failure in SARIF 2.1.0, so other tools (for example a code scanning service or a findings database) can read them. Each result has the check as `ruleId`, the file and line, the message, the `level` (`warning` for a finding, `error` for a parse failure) and the severity as the `severity` property. A file inside the project is a relative URI with the `uriBaseId` `PROJECTROOT`, which `originalUriBaseIds` maps to the project root; a file outside it is a `file://` URI.
 * Files that clang cannot parse are listed in their own **Parse failures** section on the entry page. Findings and parse failures never fail the build.
@@ -176,6 +176,7 @@ platforms:
           resolvers:
             default: [gcovr]
             local: [gcovr, vscode]
+            ci: [repository, gcovr]
 ```
 
 * `source_links` (default `false`): calls `clanguru docs` with `--source-links` and `--project-root`, so the source docs contain `source:` links. The clanguru version must support `--source-links`. With `false`, the generated CMake does not change.
@@ -186,6 +187,7 @@ Strategies:
 
 * `gcovr`: links to the line in the file's page of the component coverage report (`coverage/<component>/`), relative to the page. It finds the file by the path that each file page shows in its breadcrumb. The line anchor follows the page: `#L<line>` or `#l<line>`, whichever id the page has for that line (gcovr's boost and github themes differ); a line without an id links to the page and logs a warning. A file can be listed in several component trees, for example by an integration test component; pages with the same name are the same file, and the tree of the component in the source path wins. If matching pages have different names, it logs a warning and the link becomes plain text.
 * `vscode`: links to `vscode://file/<absolute path>:<line>`. It works only on the machine that built the report, so use it in a `local` profile.
+* `repository`: links to `<repository URL>/blob/<commit>/<path>#L<line>`. The URL is the HTTPS form of the checkout's `origin` remote and the commit is the checked out one. yanga-core detects both. Use it in the `ci` profile: locally an unpushed commit gives a dead link. Without a URL or a commit, and for a source outside the project root, it resolves nothing, so the next strategy or plain text applies.
 
 The profile is `ci` when the `CIContext` from the `CheckCIContext` step of pypeline-semantic-release says `is_ci`. Otherwise it is `local`, also when there is no `CIContext`. A profile that is not configured falls back to `default`.
 

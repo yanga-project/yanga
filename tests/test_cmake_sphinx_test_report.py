@@ -15,7 +15,9 @@ def test_writes_and_registers_a_test_report_page(execution_context: ExecutionCon
     SphinxTestReportCMakeGenerator(execution_context, output_dir).generate()
 
     page = output_dir / "light_controller" / "light_controller_test_report.rst"
-    assert page.read_text() == (f"Test Report\n===========\n\n.. test-report:: light_controller test results\n   :id: TR_LIGHT_CONTROLLER\n   :file: {junit_report.as_posix()}\n")
+    lines = page.read_text().splitlines()
+    assert lines[:4] == ["Test Report", "===========", "", ".. test-report:: light_controller test results"]
+    assert set(lines[4:]) == {"   :id: TR_LIGHT_CONTROLLER", "   :file: output/light_controller/light_controller_junit.xml", "   :collapse: false"}
     [registered] = execution_context.data_registry.find_data(ReportRelevantFiles)
     assert registered.file_type == ReportRelevantFileType.TEST_RESULT
     assert registered.target.target_name == "light_controller_test"
@@ -30,7 +32,9 @@ def test_names_the_page_of_a_variant_test_after_the_variant(execution_context: E
     SphinxTestReportCMakeGenerator(execution_context, output_dir).generate()
 
     page = output_dir / "variant_test" / "mock_variant_test_report.rst"
-    assert page.read_text() == (f"Test Report\n===========\n\n.. test-report:: mock_variant test results\n   :id: TR_MOCK_VARIANT\n   :file: {junit_report.as_posix()}\n")
+    lines = page.read_text().splitlines()
+    assert lines[:4] == ["Test Report", "===========", "", ".. test-report:: mock_variant test results"]
+    assert set(lines[4:]) == {"   :id: TR_MOCK_VARIANT", "   :file: output/variant_test/variant_test_junit.xml", "   :collapse: false"}
     [registered] = execution_context.data_registry.find_data(ReportRelevantFiles)
     assert registered.target.target_name == "test"
     assert registered.files_to_be_included == [page]

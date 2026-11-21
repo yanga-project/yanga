@@ -46,13 +46,17 @@ def test_component_config_reads_the_gcda_files_under_the_gcov_prefix(tmp_path: P
     output_file = tmp_path / "gcovr.cfg"
     command = CreateComponentGcovrConfigCommand()
     command.register_parser(ArgumentParser().add_subparsers())
-    argv = ["--component-objects", str(object_file), "--source-files", str(tmp_path / "a.c"), "--output-file", str(output_file)]
+    argv = ["--component-objects", str(object_file), "--source-files", str(tmp_path / "a.c"), "--project-dir", str(tmp_path), "--output-file", str(output_file)]
 
     command.run(command.parser.parse_args(argv + ["--gcov-prefix", str(gcov_prefix)] * with_gcov_prefix))
 
     resolved_gcno = gcno_file.resolve()
     copied_gcno = gcov_prefix / resolved_gcno.relative_to(resolved_gcno.anchor)
-    assert output_file.read_text().splitlines()[0] == f"root = {(gcov_prefix if with_gcov_prefix else object_file.parent).as_posix()}"
+    lines = output_file.read_text().splitlines()
+    assert f"root = {tmp_path.as_posix()}" in lines
+    object_directory = (gcov_prefix if with_gcov_prefix else object_file.parent).as_posix()
+    assert f"search-path = {object_directory}" in lines
+    assert f"gcov-object-directory = {object_directory}" in lines
     assert copied_gcno.exists() == with_gcov_prefix
     if with_gcov_prefix:
         assert copied_gcno.read_text() == "notes"

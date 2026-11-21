@@ -70,6 +70,9 @@ class ComponentCommandArgs(BaseConfigJSONMixin):
     source_files: list[Path] = field(
         metadata={"help": "Relevant source files."},
     )
+    project_dir: Path = field(
+        metadata={"help": "Project directory: gcovr's root, so the report shows source paths relative to it."},
+    )
     output_file: Path = field(
         metadata={"help": "Output Gcovr configuration file."},
     )
@@ -102,7 +105,10 @@ class CreateComponentGcovrConfigCommand(Command):
             object_directory = str(config.gcov_prefix)
         # Create a gcovr config file
         gcovr_cfg_lines = [
-            f"root = {Path(object_directory).as_posix()}",
+            f"root = {config.project_dir.as_posix()}",
+            f"search-path = {Path(object_directory).as_posix()}",
+            # gcov runs here and writes its intermediate files here, not in the project root that parallel coverage runs share.
+            f"gcov-object-directory = {Path(object_directory).as_posix()}",
             *[f"filter = {source_file.as_posix()}" for source_file in config.source_files],
         ]
 

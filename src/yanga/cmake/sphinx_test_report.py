@@ -38,9 +38,12 @@ class SphinxTestReportCMakeGenerator(CMakeGenerator):
             junit_report = test_result.junit_report.to_path()
             page = junit_report.with_name(f"{name}_test_report.rst")
             report_id = "TR_" + re.sub(r"\W", "_", name).upper()
+            # sphinx-test-reports joins a relative path onto tr_rootdir, by default the conf.py folder: the project dir the report builds from.
+            project_root = self.execution_context.project_root_dir
+            junit_file = junit_report.relative_to(project_root) if junit_report.is_relative_to(project_root) else junit_report
             GeneratedFile(
                 page,
-                f"Test Report\n===========\n\n.. test-report:: {name} test results\n   :id: {report_id}\n   :file: {junit_report.as_posix()}\n",
+                f"Test Report\n===========\n\n.. test-report:: {name} test results\n   :id: {report_id}\n   :file: {junit_file.as_posix()}\n   :collapse: false\n",
             ).to_file()
             self.execution_context.data_registry.insert(
                 ReportRelevantFiles(target=test_result.target, files_to_be_included=[page], file_type=ReportRelevantFileType.TEST_RESULT),

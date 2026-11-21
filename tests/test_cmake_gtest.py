@@ -588,3 +588,15 @@ def test_variant_test_leaves_out_the_integration_component(tmp_path: Path, outpu
     assert [argument for argument in command_arguments(clanguru) if argument.startswith("--source-file ")] == [f"--source-file {source}" for source in sources]
     integ_executable = assert_element_of_type(elements, CMakeAddExecutable, lambda exe: exe.name == "IntegAB")
     assert "IntegAB_PC_lib" in integ_executable.libraries
+
+
+def test_component_and_variant_test_coverage_use_the_project_root(tmp_path: Path, output_dir: Path) -> None:
+    elements = GTestCMakeGenerator(variant_test_context(tmp_path, variant_gtest_block(tmp_path)), output_dir).generate()
+
+    config_commands = [
+        arguments
+        for arguments in (command_arguments(command) for command in find_elements_of_type(elements, CMakeCustomCommand))
+        if arguments and arguments[0] == "gcovr_config_component"
+    ]
+    project_dirs = [arguments[arguments.index("--project-dir") + 1] if "--project-dir" in arguments else None for arguments in config_commands]
+    assert project_dirs == [tmp_path.as_posix()] * 2

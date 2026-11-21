@@ -6,12 +6,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from py_app_dev.core.cmd_line import Command, register_arguments_for_config_dataclass
 from py_app_dev.core.config import BaseConfigJSONMixin
 from py_app_dev.core.logging import logger, time_it
 from yanga_core.commands.base import create_config
+from yanga_core.steps.write_publish_manifest import get_commit, get_repository_url
 
 _SOURCE_ANCHOR = re.compile(r'<a\b[^>]*\bhref="source:([^"#]+)#(\d+)"[^>]*>(.*?)</a>', re.DOTALL)
 _COVERAGE_PAGE_PATH = re.compile(r'<span class="current" title="([^"]+)"')
@@ -24,6 +25,7 @@ Strategy = Callable[[str, int], str | None]
 class SourceLinkStrategy(Enum):
     GCOVR = "gcovr"
     VSCODE = "vscode"
+    REPOSITORY = "repository"
 
 
 def _gcovr_strategy(report_dir: Path) -> Strategy:
@@ -58,11 +60,26 @@ def _vscode_strategy(project_root: Path) -> Strategy:
     return lambda source_path, line: f"vscode://file/{(root / source_path).as_posix()}:{line}"
 
 
+def _repository_strategy(project_root: Path) -> Strategy:
+    url, commit = get_repository_url(project_root), get_commit(project_root)
+    if url is None or commit is None:
+        return lambda source_path, line: None
+
+    def resolve(source_path: str, line: int) -> str | None:
+        """A source outside the project (`../`, absolute, another drive) is not in the repository at this path."""
+        if PurePosixPath(source_path).is_absolute() or PureWindowsPath(source_path).is_absolute() or PurePosixPath(source_path).parts[0] == "..":
+            return None
+        return f"{url}/blob/{commit}/{source_path}#L{line}"
+
+    return resolve
+
+
 def resolve_source_links(report_dir: Path, project_root: Path, strategies: list[SourceLinkStrategy]) -> None:
     """Try the strategies in order for every `source:` link under report_dir."""
     available: dict[SourceLinkStrategy, Callable[[], Strategy]] = {
         SourceLinkStrategy.GCOVR: lambda: _gcovr_strategy(report_dir),
         SourceLinkStrategy.VSCODE: lambda: _vscode_strategy(project_root),
+        SourceLinkStrategy.REPOSITORY: lambda: _repository_strategy(project_root),
     }
     resolvers = [available[strategy]() for strategy in strategies]
 
@@ -86,7 +103,7 @@ def _replace(match: re.Match[str], resolvers: list[Strategy], depth: int) -> str
 class CommandArgs(BaseConfigJSONMixin):
     report_dir: Path = field(metadata={"help": "Root directory of the HTML report"})
     project_root: Path = field(metadata={"help": "Project root directory, used to build editor links"})
-    strategies: list[SourceLinkStrategy] = field(metadata={"help": "Link strategies, tried in order: gcovr, vscode"})
+    strategies: list[SourceLinkStrategy] = field(metadata={"help": "Link strategies, tried in order: gcovr, vscode, repository"})
 
 
 class ResolveSourceLinksCommand(Command):
