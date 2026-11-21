@@ -1,0 +1,6 @@
+clang_tidy_severities.json is the severity per clang-tidy check, taken from
+config/labels/analyzers/clang-tidy.json of CodeChecker 6.29.3
+(https://github.com/Ericsson/codechecker), copyright Ericsson.
+Licensed under the Apache License v2.0 with LLVM Exceptions
+(SPDX: Apache-2.0 WITH LLVM-exception); the licence text is in clang_tidy_severities.LICENSE.txt.
+Only the severity labels are kept.

@@ -1,25 +1,30 @@
 """
 clang-tidy lint reports.
 
-Add the generator to one platform, ideally the test platform; `lint` and `<component>_lint` then write `clang_tidy_report.md` for the reports:
+Add the generator to one platform, ideally the test platform; `lint` and `<component>_lint` then write an HTML report (`index.html`) and `clang_tidy_report.sarif` for the reports:
 
     generators:
       - step: ClangTidyCMakeGenerator
         module: yanga.cmake.clang_tidy
 """
 
+import html
 import json
 import re
 from argparse import Namespace
+from collections.abc import Callable
 from pathlib import Path
 
+import jsonschema
 import pytest
 from clanguru.compilation_options_manager import CompileCommand
 from yanga_core.domain.config import ComponentConfig
 from yanga_core.domain.execution_context import ExecutionContext
+from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
 
 from tests.conftest import make_execution_context
 from tests.utils import find_elements_of_type
+from yanga.cmake.artifacts_locator import CMakeArtifactsLocator
 from yanga.cmake.clang_tidy import ClangTidyCMakeGenerator
 from yanga.cmake.cmake_backend import CMakeCustomCommand, CMakeCustomTarget, CMakePath
 from yanga.commands.clang_tidy import ClangCompileCommandsCommand, ClangTidyReportCommand, header_filter, parse_clang_tidy_output, to_clang_compile_command
@@ -42,19 +47,128 @@ def test_parse_keeps_warnings_and_errors_and_drops_notes() -> None:
     ]
 
 
-def test_report_merges_outputs_once_and_lists_parse_failures_apart(tmp_path: Path) -> None:
-    input_files = [tmp_path / "main.c.txt", tmp_path / "led.c.txt"]
-    for input_file in input_files:
-        input_file.write_text(CLANG_TIDY_OUTPUT)
-    output_file = tmp_path / "clang_tidy_report.md"
+TEMPLATE_MESSAGE = "template argument std::vector<int> & x > y is unused"
 
-    ClangTidyReportCommand().run(Namespace(input_files=input_files, output_file=output_file, project_dir=None))
 
-    report = output_file.read_text()
-    assert "Total issues found: 1" in report
-    assert "clang-analyzer-core.NullDereference" in report
-    assert "Parse failures" in report
-    assert f"`{Path('/work/src/led.c')}:3`: unknown type name 'foo'" in report
+def write_project_outputs(project_dir: Path) -> list[Path]:
+    """Two source outputs that both report the same header finding, one finding outside the project and one parse failure."""
+    header_finding = f"{project_dir / 'comp/include/vec.h'}:7:3: warning: header finding [yanga-test-unknown-check]"
+    main_output = f"""{project_dir / "comp/src/main.c"}:271:9: warning: 42 is a magic number [readability-magic-numbers]
+{project_dir / "comp/src/main.c"}:280:5: warning: {TEMPLATE_MESSAGE} [yanga-test-unknown-check]
+{header_finding}
+{Path("/opt/vendor/ext.h")}:4:1: warning: 7 is a magic number [readability-magic-numbers]
+{project_dir / "comp/src/led.c"}:3:1: error: unknown type name 'foo' [clang-diagnostic-error]
+"""
+    util_output = f"""{project_dir / "comp/src/util.c"}:5:9: warning: 5 is a magic number [readability-magic-numbers]
+{project_dir / "comp/src/util.c"}:6:9: warning: 6 is a magic number [readability-magic-numbers]
+{header_finding}
+"""
+    input_files = [project_dir / "main.c.txt", project_dir / "util.c.txt"]
+    for input_file, output in zip(input_files, [main_output, util_output], strict=True):
+        input_file.write_text(output)
+    return input_files
+
+
+def run_report(input_files: list[Path], output_dir: Path, project_dir: Path) -> Path:
+    ClangTidyReportCommand().run(Namespace(input_files=input_files, output_dir=output_dir, project_dir=project_dir))
+    return output_dir
+
+
+def visible_text(page: str) -> str:
+    page = re.sub(r"<(script|style)\b.*?</\1>", " ", page, flags=re.DOTALL | re.IGNORECASE)
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", page)).split())
+
+
+@pytest.mark.parametrize(("check", "severity"), [("readability-magic-numbers", "STYLE"), ("yanga-test-unknown-check", "MEDIUM")])
+def test_severity_from_codechecker_table_and_medium_for_unknown_checks(check: str, severity: str) -> None:
+    from yanga.commands.clang_tidy import severity_of
+
+    assert severity_of(check) == severity
+
+
+def test_report_writes_valid_sarif_with_findings_once_and_parse_failures_as_errors(tmp_path: Path, get_test_data_path: Callable[[str], Path]) -> None:
+    input_files = write_project_outputs(tmp_path)
+    input_files.append(tmp_path / "sample.txt")
+    input_files[-1].write_text(CLANG_TIDY_OUTPUT)
+
+    sarif = json.loads((run_report(input_files, tmp_path / "report", tmp_path) / "clang_tidy_report.sarif").read_text())
+
+    jsonschema.validate(sarif, json.loads(get_test_data_path("sarif-schema-2.1.0.json").read_text()))
+    results = sarif["runs"][0]["results"]
+    [magic_number] = [result for result in results if result["message"]["text"] == "42 is a magic number"]
+    location = magic_number["locations"][0]["physicalLocation"]
+    assert magic_number["ruleId"] == "readability-magic-numbers"
+    assert location["artifactLocation"] == {"uri": "comp/src/main.c", "uriBaseId": "PROJECTROOT"}
+    assert sarif["runs"][0]["originalUriBaseIds"]["PROJECTROOT"]["uri"] == tmp_path.as_uri() + "/"
+    [outside] = [result for result in results if result["message"]["text"] == "7 is a magic number"]
+    assert outside["locations"][0]["physicalLocation"]["artifactLocation"] == {"uri": Path("/opt/vendor/ext.h").absolute().as_uri()}
+    assert location["region"]["startLine"] == 271
+    assert magic_number["level"] == "warning"
+    assert magic_number["properties"]["severity"] == "STYLE"
+    assert [result["message"]["text"] for result in results].count("header finding") == 1
+    assert {result["level"] for result in results if result["ruleId"] == "clang-diagnostic-error"} == {"error"}
+    assert all(result["properties"]["severity"] in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "STYLE"} for result in results if result["level"] == "warning")
+
+
+@pytest.mark.parametrize(
+    ("name", "counts"),
+    [
+        ("comp", "0 0 2 0 3"),
+        ("src", "0 0 1 0 3"),
+        ("main.c", "0 0 1 0 1"),
+        ("util.c", "0 0 0 0 2"),
+        ("vec.h", "0 0 1 0 0"),
+        ("ext.h", "0 0 0 0 1"),
+    ],
+)
+def test_report_tree_counts_findings_per_severity_for_each_folder_and_file(tmp_path: Path, name: str, counts: str) -> None:
+    output_dir = run_report(write_project_outputs(tmp_path), tmp_path / "report", tmp_path)
+
+    index = (output_dir / "index.html").read_text()
+    assert 'id="file-tree"' in index
+    assert re.search(r"CRITICAL\s+HIGH\s+MEDIUM\s+LOW\s+STYLE", visible_text(index), re.IGNORECASE)
+    counts_pattern = r"\s+".join(counts.split())
+    row = re.compile(rf"(^|[\s/]){re.escape(name)}\s+{counts_pattern}(\s|$)")
+    assert any(row.search(visible_text(page.read_text())) for page in output_dir.rglob("*.html"))
+
+
+def test_report_file_page_lists_findings_escaped_and_parse_failures_apart(tmp_path: Path) -> None:
+    output_dir = run_report(write_project_outputs(tmp_path), tmp_path / "report", tmp_path)
+
+    pages = {page: page.read_text() for page in output_dir.rglob("*.html")}
+    [file_page] = [page for page, content in pages.items() if "42 is a magic number" in content]
+    assert file_page.name != "index.html"
+    text = visible_text(pages[file_page])
+    assert all(value in text for value in ["271", "readability-magic-numbers", "STYLE", "42 is a magic number"])
+    assert "std::vector&lt;int&gt; &amp; x &gt; y" in pages[file_page]
+    assert not any(TEMPLATE_MESSAGE in content for content in pages.values())
+    index = visible_text(pages[output_dir / "index.html"])
+    assert "Parse failures" in index
+    assert "unknown type name 'foo'" in index
+
+
+def test_report_pages_drop_gcovr_branding_and_copied_assets_keep_its_licence_notice(tmp_path: Path) -> None:
+    output_dir = run_report(write_project_outputs(tmp_path), tmp_path / "report", tmp_path)
+
+    for page in output_dir.rglob("*.html"):
+        content = page.read_text()
+        assert 'id="file-tree"' in content
+        assert all(branding not in content for branding in ["boost-wordmark", "Created using", 'id="view-toggle"'])
+    for asset in ["style.css", "gcovr.js"]:
+        notice = re.match(r"\s*(/\*.*?\*/|(//[^\n]*\n)+)", (output_dir / asset).read_text(), re.DOTALL)
+        assert notice, asset
+        assert "gcovr authors" in notice[0]
+        assert "BSD-3-Clause" in notice[0]
+
+
+def test_report_without_findings_still_renders(tmp_path: Path) -> None:
+    input_file = tmp_path / "main.c.txt"
+    input_file.write_text("No warnings.\n")
+
+    output_dir = run_report([input_file], tmp_path / "report", tmp_path)
+
+    assert 'id="file-tree"' in (output_dir / "index.html").read_text()
+    assert json.loads((output_dir / "clang_tidy_report.sarif").read_text())["runs"][0]["results"] == []
 
 
 def test_clang_compile_command_keeps_only_parse_flags() -> None:
@@ -157,3 +271,22 @@ def test_clang_tidy_steps_rerun_when_project_config_changes(execution_context: E
 
     tidy_commands = [command for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy"]
     assert all(str(CMakePath(config_file)) in [str(dependency) for dependency in command.depends or []] for command in tidy_commands)
+
+
+def test_generator_registers_html_report_for_each_component_and_the_variant(execution_context: ExecutionContext, output_dir: Path) -> None:
+    elements = ClangTidyCMakeGenerator(execution_context, output_dir).generate()
+
+    locator = CMakeArtifactsLocator(output_dir, execution_context.spl_paths)
+    registered = execution_context.data_registry.find_data(ReportRelevantFiles)
+    assert {entry.target.target_name for entry in registered} == {"CompA_lint", "CompBNotTestable_lint", "lint"}
+    assert all(entry.file_type == ReportRelevantFileType.HTML and entry.html_content for entry in registered)
+    index_files = {
+        (locator.get_component_reports_dir(entry.target.component_name) if entry.target.component_name else locator.cmake_variant_reports_dir).to_path()
+        / entry.html_content.index_html
+        for entry in registered
+        if entry.html_content
+    }
+    report_arguments = [command.commands[0].arguments for command in find_elements_of_type(elements, CMakeCustomCommand) if command.commands[0].arguments[0] == "clang_tidy_report"]
+    assert "--output-file" not in [str(argument) for arguments in report_arguments for argument in arguments]
+    output_dirs = [arguments[arguments.index("--output-dir") + 1] for arguments in report_arguments]
+    assert index_files == {directory.to_path() / "index.html" for directory in output_dirs if isinstance(directory, CMakePath)}
