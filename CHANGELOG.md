@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.50.0 (2026-11-22)
+
+### Features
+
+- Tag the report entries and build the merged reports per level (yanga-011) ([`858b91a`](https://github.com/yanga-project/yanga/commit/858b91aa870202c1b960416e2379ab48dfd90a08))
+- Fix the variant report issues found in the spledy report (yanga-009) ([`eab81dd`](https://github.com/yanga-project/yanga/commit/eab81ddd28b007e79072c79374510d283cc19d40))
+
 ## v2.49.0 (2026-11-21)
 
 ### Features
