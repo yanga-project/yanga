@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.51.0 (2026-11-24)
+
+### Features
+
+- Pytest test specs as needs through autodoc (yanga-014) ([`395446e`](https://github.com/yanga-project/yanga/commit/395446e548f42229e1e0477dd5c44faead896e48))
+- Pytest test framework through a test library per test scope (yanga-013) ([`15b8993`](https://github.com/yanga-project/yanga/commit/15b89932d1fbb09e3c7323d5080206fc3544e07c))
+- Test results per framework and testresultscmakegenerator for test targets and coverage (yanga-012) ([`aadaf9d`](https://github.com/yanga-project/yanga/commit/aadaf9dc4832f650476e008e0cf8ea7053d93048))
+
 ## v2.50.0 (2026-11-22)
 
 ### Features
