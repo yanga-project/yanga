@@ -207,6 +207,7 @@ class PytestCMakeGenerator(CMakeGenerator):
                         "pytest",
                         "-p",
                         "no:cacheprovider",
+                        f"--rootdir={self.execution_context.project_root_dir.as_posix()}",
                         f"--junitxml={junit_report}",
                         *test_files,
                         "||",
@@ -227,7 +228,7 @@ class PytestCMakeGenerator(CMakeGenerator):
         elements.append(execute_tests_command)
         elements.append(CMakeCustomTarget(test_target.target_name, f"Execute the {PYTEST_FRAMEWORK} tests of {name}", [], [junit_report], True))
         self.execution_context.data_registry.insert(
-            TestResultFile(target=test_target, junit_report=junit_report, framework=PYTEST_FRAMEWORK, test_sources=[]),
+            TestResultFile(target=test_target, junit_report=junit_report, framework=PYTEST_FRAMEWORK, test_sources=testing_block.sources),
             test_target.target_name,
         )
 

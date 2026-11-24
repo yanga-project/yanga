@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any
 
@@ -244,3 +245,44 @@ def test_docs_and_sources_entries_are_tagged_with_level_component_and_kind(tmp_p
     ReportCMakeGenerator(execution_context, output_dir).create_components_cmake_elements()
 
     assert [set(entry.tags) for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.component_name == name] == expected_tags
+
+
+def register_pytest_test_result(tmp_path: Path, output_dir: Path, framework: str, test_source: str) -> tuple[ExecutionContext, CMakePath]:
+    configs = [ComponentConfig(name="CompA", path=Path("compA"), sources=["compA.c"], testing=[TestingBlockConfig(framework=framework, sources=[test_source])])]
+    execution_context = make_execution_context(tmp_path, configs)
+    target = UserRequest(UserRequestScope.COMPONENT, component_name="CompA", target=f"{framework}_test")
+    build_dir = CMakeArtifactsLocator(output_dir, execution_context.spl_paths).get_component_build_dir("CompA")
+    test_result = TestResultFile(
+        target=target, junit_report=build_dir.joinpath(f"CompA_{framework}_junit.xml"), test_sources=execution_context.components[0].testing[0].sources, framework=framework
+    )
+    execution_context.data_registry.insert(test_result, target.target_name)
+    return execution_context, build_dir
+
+
+def test_pytest_test_source_gets_an_autodoc_page(tmp_path: Path, output_dir: Path) -> None:
+    execution_context, build_dir = register_pytest_test_result(tmp_path, output_dir, "pytest", "test/test_compA.py")
+
+    elements = ReportCMakeGenerator(execution_context, output_dir).generate()
+
+    page = build_dir.joinpath("test_compA.py.md").to_path()
+    assert page.read_text() == "# test_compA.py\n\n```{eval-rst}\n.. automodule:: compA.test.test_compA\n   :members:\n```\n"
+    entry = assert_element_of_type(
+        execution_context.data_registry.find_data(ReportRelevantFiles), ReportRelevantFiles, lambda elem: elem.file_type == ReportRelevantFileType.SOURCES
+    )
+    assert entry.all_files == [build_dir.joinpath("compA.c.md").to_path(), page]
+    source_files = [str(cmd.arguments[cmd.arguments.index("--source-file") + 1]) for cmd in find_target(elements, "CompA_docs").commands if cmd.command == "clanguru"]
+    assert source_files == [(tmp_path / "compA/compA.c").as_posix()]
+
+
+@pytest.mark.parametrize(("framework", "test_source", "has_pythonpath"), [("pytest", "test_compA.py", True), ("gtest", "test_compA.cc", False)])
+def test_report_builds_get_the_pytest_folders_on_the_python_path(tmp_path: Path, output_dir: Path, framework: str, test_source: str, has_pythonpath: bool) -> None:
+    execution_context, build_dir = register_pytest_test_result(tmp_path, output_dir, framework, test_source)
+
+    elements = ReportCMakeGenerator(execution_context, output_dir).generate()
+
+    separator = os.pathsep.replace(";", "$<SEMICOLON>")
+    expected = [f"PYTHONPATH={tmp_path.as_posix()}{separator}{build_dir.to_path().as_posix()}"] if has_pythonpath else []
+    for name in ("CompA_report", "report"):
+        [sphinx_build] = [cmd for cmd in find_target(elements, name).commands if "sphinx-build" in [str(arg) for arg in cmd.arguments]]
+        env_arguments = [str(arg).replace("${CMAKE_BUILD_DIR}", output_dir.as_posix()) for arg in sphinx_build.arguments]
+        assert [arg for arg in env_arguments if arg.startswith("PYTHONPATH=")] == expected

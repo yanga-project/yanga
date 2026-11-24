@@ -242,7 +242,7 @@ def test_test_scope_runs_pytest_on_its_test_library(
     gcov_prefix = f" GCOV_PREFIX={build_dir}/pytest_gcov" if name == "mock_variant" else ""
     assert " ".join([str(command.command), *(str(arg) for arg in command.arguments)]) == (
         f"${{CMAKE_COMMAND}} -E env PYTHONPATH={build_dir}{gcov_prefix} {Path(sys.executable).as_posix()} -m pytest -p no:cacheprovider"
-        f" --junitxml={junit} {test_path} || ${{CMAKE_COMMAND}} -E true"
+        f" --rootdir={tmp_path.as_posix()} --junitxml={junit} {test_path} || ${{CMAKE_COMMAND}} -E true"
     )
     assert run.working_directory is not None
     assert run.working_directory.to_path() == tmp_path
@@ -263,7 +263,8 @@ def test_test_scope_registers_its_junit_file_and_tracefile(
     junit = build_dir.joinpath(f"{name}_pytest_junit.xml")
     tracefile = build_dir.joinpath(f"{name}_pytest_coverage.json")
     gcovr_config = build_dir.joinpath(f"{name}_pytest_gcovr.cfg")
-    assert TestResultFile(target=run_target(name), junit_report=junit, framework="pytest", test_sources=[]) in execution_context.data_registry.find_data(TestResultFile)
+    test_result = TestResultFile(target=run_target(name), junit_report=junit, framework="pytest", test_sources=[tmp_path / test_file])
+    assert test_result in execution_context.data_registry.find_data(TestResultFile)
     assert CoverageRelevantFile(target=coverage_target(name), json_report=tracefile, framework="pytest") in execution_context.data_registry.find_data(CoverageRelevantFile)
 
     command = assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: str(tracefile) in [str(output) for output in cmd.outputs or []])

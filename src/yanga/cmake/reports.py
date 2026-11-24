@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -14,6 +15,7 @@ from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileTyp
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
 from yanga.cmake.cmake_backend import CMakeAddTargetCleanFiles, CMakeCommand, CMakeComment, CMakeCustomTarget, CMakeElement, CMakePath
 from yanga.cmake.generator import CMakeGenerator, report_level
+from yanga.cmake.pytest import PYTEST_FRAMEWORK
 from yanga.cmake.sphinx_test_report import TestResultFile
 from yanga.commands.source_links import SourceLinkStrategy
 
@@ -78,6 +80,19 @@ class ReportCMakeGenerator(CMakeGenerator):
                 ],
             )
         ]
+
+    def python_path_env(self) -> list[str]:
+        """The report build needs the project root and each pytest build folder, because autodoc imports the pytest test modules."""
+        folders = [
+            test_result.junit_report.to_path().parent.as_posix()
+            for test_result in self.execution_context.data_registry.find_data(TestResultFile)
+            if test_result.framework == PYTEST_FRAMEWORK and test_result.test_sources
+        ]
+        if not folders:
+            return []
+        # CMake splits arguments on `;`, the Windows path separator
+        separator = os.pathsep.replace(";", "$<SEMICOLON>")
+        return [f"PYTHONPATH={separator.join([self.execution_context.project_root_dir.as_posix(), *folders])}"]
 
     def generate(self) -> list[CMakeElement]:
         elements: list[CMakeElement] = []
@@ -145,6 +160,7 @@ class ReportCMakeGenerator(CMakeGenerator):
                             "-E",
                             "env",
                             f"{SphinxConfig.REPORT_CONFIGURATION_FILE_ENV_NAME}={self.artifacts_locator.get_build_artifact(BuildArtifact.REPORT_CONFIG)}",
+                            *self.python_path_env(),
                             "--",
                             "sphinx-build",
                             "-E",
@@ -198,6 +214,15 @@ class ReportCMakeGenerator(CMakeGenerator):
                 if test_result.target.component_name == component.name:
                     source_files.extend([CMakePath(source) for source in test_result.test_sources])
             source_files_output_md = [component_build_dir.joinpath(f"{source_file.to_path().name}.md") for source_file in source_files]
+            # clanguru documents the C and C++ sources; a pytest module page only points autodoc at the module
+            clanguru_pages: list[tuple[CMakePath, CMakePath]] = []
+            for source_file, output_md in zip(source_files, source_files_output_md, strict=False):
+                source_path = source_file.to_path()
+                if source_path.suffix == ".py":
+                    module = ".".join(source_path.relative_to(self.execution_context.project_root_dir).with_suffix("").parts)
+                    GeneratedFile(output_md.to_path(), f"# {source_path.name}\n\n```{{eval-rst}}\n.. automodule:: {module}\n   :members:\n```\n").to_file()
+                else:
+                    clanguru_pages.append((source_file, output_md))
             component_docs_target = UserRequest(
                 UserRequestScope.COMPONENT,
                 target=UserRequestTarget.DOCS,
@@ -228,10 +253,10 @@ class ReportCMakeGenerator(CMakeGenerator):
                                     *self.source_links_flags(),
                                 ],
                             )
-                            for source_file, output_md in zip(source_files, source_files_output_md, strict=False)
+                            for source_file, output_md in clanguru_pages
                         ],
                         depends=[self.artifacts_locator.get_build_artifact(BuildArtifact.COMPILE_COMMANDS)],
-                        byproducts=source_files_output_md,
+                        byproducts=[output_md for _, output_md in clanguru_pages],
                     )
                 )
             if source_files_output_md:
@@ -325,6 +350,7 @@ class ReportCMakeGenerator(CMakeGenerator):
                                 "-E",
                                 "env",
                                 f"{SphinxConfig.REPORT_CONFIGURATION_FILE_ENV_NAME}={report_config_output_file}",
+                                *self.python_path_env(),
                                 "--",
                                 "sphinx-build",
                                 "-E",

@@ -137,7 +137,7 @@ To write the tests in Python, list the `PytestCMakeGenerator` on the platform, a
 
 ```yaml
 platforms:
-  - name: test
+  - name: gtest
     generators:
       - step: GTestCMakeGenerator
         module: yanga.cmake.gtest
@@ -175,7 +175,57 @@ def test_reads_the_clock() -> None:
 
 A call to a function with no mock set returns zero and is listed in `lib.mocks.unexpected_calls`. A test checks the list if it wants to. `lib.<variable>.value` reads and writes a C variable.
 
-Run only the pytest tests with `yanga run --platform test --target my_component_pytest_test`, or all frameworks of the component with `yanga run --platform test --target my_component_test`. A failing test does not fail the build; the result is in the JUnit file and the report. Integration components and variants take a `pytest` block in the same way. The variant runs with `variant_pytest_test`. See the [CMake reference](../reference/cmake.md#pytestcmakegenerator) for the generated files.
+Run only the pytest tests with `yanga run --platform gtest --target my_component_pytest_test`, or all frameworks of the component with `yanga run --platform gtest --target my_component_test`. A failing test does not fail the build; the result is in the JUnit file and the report. Integration components and variants take a `pytest` block in the same way. The variant runs with `variant_pytest_test`. See the [CMake reference](../reference/cmake.md#pytestcmakegenerator) for the generated files.
+
+#### Test specs for pytest tests
+
+A pytest test is a spec in the report like a gtest test. Write a need directive in the docstring of the test function. The title is the placeholder `{{ pytest.test }}`:
+
+```python
+def test_power_on_turns_the_light_green() -> None:
+    """
+    .. test:: {{ pytest.test }}
+       :id: TS_LC-101
+       :tests: SWDD_LC-100
+    """
+```
+
+The placeholder becomes `<module>.<function>`. The module is the dotted path from the project root. This is the `classname` of the pytest JUnit result, then `.`, then the test name without the `[params]` of a parametrized test. Only functions with a docstring appear in the report.
+
+Add the extension to the `conf.py` of the project. It loads `sphinx.ext.autodoc`, which is part of Sphinx:
+
+```python
+extensions.append("yanga.sphinx_pytest")
+```
+
+The extension is required as soon as a platform lists `PytestCMakeGenerator`, with or without test specs. The report writes an `automodule` page for every registered `.py` test source. Without the extension, that page shows an unknown directive.
+
+The report imports the test modules to read the docstrings. This works because the report runs after the tests: the test library and the binding exist, and yanga puts the project root and the pytest scope folders on `PYTHONPATH`.
+
+To link a spec to its results, add the pytest clause to the `results` link in `conf.py`, joined to the gtest clause with `or`:
+
+```python
+needs_links = {
+    "results": {
+        "incoming": "is resulted from",
+        "outgoing": "results",
+        "default": (
+            "[[links_from_filter(\"type == 'testcase' and ("
+            "(current_need['title'].split('.')[0] in classname.split('/')"
+            " and case.split('/')[0] == current_need['title'].split('.')[1])"
+            " or (classname == current_need['title'].rpartition('.')[0]"
+            " and case.split('[')[0] == current_need['title'].rpartition('.')[2])"
+            ")\")]]"
+        ),
+    },
+}
+```
+
+The first clause matches gtest titles `Suite.Case`. The second matches pytest titles `<module>.<function>`. Drop the gtest clause in a project without gtest specs.
+
+Only component test sources are rendered. The pytest test sources of a variant are registered, but they are not rendered on a page (as for gtest).
+
+The report imports each test module with the project root and the pytest scope folders on `PYTHONPATH`. This replaces a `PYTHONPATH` set in the environment. A test module that imports a helper module next to it by its bare name cannot be imported by the report. Its specs are then missing and Sphinx warns.
 
 ## See also
 
