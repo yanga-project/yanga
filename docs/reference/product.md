@@ -201,6 +201,25 @@ platforms:
 
 ````
 
+````{note}
+The `pytest` block reads `sources` (the test files), `mockup_sources` and `config.mocking`. Its `config.mocking` has `strict` and `exclude_symbol_patterns` and overrides the mocking of the `PytestCMakeGenerator` configured for your platform. `enabled: false` is an error.
+
+```yaml
+components:
+  - name: my_component
+    sources: ["src/my_component.c"]
+    testing:
+      - framework: pytest
+        sources:
+          - "test/test_my_component.py"
+        config:
+          mocking:
+            strict: true
+            exclude_symbol_patterns:
+              - "_*"
+```
+````
+
 ### Container Components
 
 A container component groups other components, its `subcomponents`, so a variant selects the container instead of listing each part. A container has no `sources`, `include_directories` or `testing` of its own; it may have `docs` and `required_components`.

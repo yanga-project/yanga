@@ -131,7 +131,53 @@ variants:
 - **Results:** `yanga run --platform gtest --target test` builds and runs the variant test (the default target runs it too). The variant report shows its JUnit result (with `SphinxTestReportCMakeGenerator`) and its coverage on its own **Coverage** page. Every coverage page has this title; the chapter that includes it gives the level. The variant test also counts in the overall coverage; the merged coverage of all components holds only the component unit tests (see the report entry tags in the CMake reference).
 - **Platforms:** only a platform with `GTestCMakeGenerator` builds the variant test; `variant_gtest_test` runs only it. A variant without a `gtest` block builds as before.
 
+### 7. Test with pytest (optional)
+
+To write the tests in Python, list the `PytestCMakeGenerator` on the platform, after the `GTestCMakeGenerator` and before the `TestResultsCMakeGenerator`. A component can have a `gtest` and a `pytest` block. pytest must be installed in the project's Python environment.
+
+```yaml
+platforms:
+  - name: test
+    generators:
+      - step: GTestCMakeGenerator
+        module: yanga.cmake.gtest
+      - step: PytestCMakeGenerator
+        module: yanga.cmake.pytest
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
+```
+
+```yaml
+components:
+  - name: my_component
+    sources: ["src/my_component.c"]
+    testing:
+      - framework: pytest
+        sources:
+          - "test/test_my_component.py"
+```
+
+yanga builds a shared test library from the component and generates the module `my_component_binding`. A call to a function the component does not define goes to a Python mock. `load()` resets every mock, so call it at the start of each test:
+
+```python
+from unittest.mock import Mock
+
+import my_component_binding
+
+
+def test_reads_the_clock() -> None:
+    lib = my_component_binding.load()
+    lib.mocks.clock_now = Mock(return_value=42)
+
+    assert lib.my_component_run() == 42
+    assert lib.mocks.unexpected_calls == []
+```
+
+A call to a function with no mock set returns zero and is listed in `lib.mocks.unexpected_calls`. A test checks the list if it wants to. `lib.<variable>.value` reads and writes a C variable.
+
+Run only the pytest tests with `yanga run --platform test --target my_component_pytest_test`, or all frameworks of the component with `yanga run --platform test --target my_component_test`. A failing test does not fail the build; the result is in the JUnit file and the report. Integration components and variants take a `pytest` block in the same way. The variant runs with `variant_pytest_test`. See the [CMake reference](../reference/cmake.md#pytestcmakegenerator) for the generated files.
+
 ## See also
 
 - [Software Product Line Reference](../reference/product.md) for component configuration
-- [CMake Generators](../reference/cmake.md) for GTestCMakeGenerator options
+- [CMake Generators](../reference/cmake.md) for GTestCMakeGenerator and PytestCMakeGenerator options

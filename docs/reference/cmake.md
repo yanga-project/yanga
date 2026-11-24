@@ -54,6 +54,8 @@ This generator facilitates unit testing using the Google Test framework. For eac
 
 **Use Case:** Running unit tests and generating coverage reports for individual components.
 
+The mockup sources are built without coverage instrumentation, so they do not count in coverage.
+
 It builds the test executable, runs it as `<name>_gtest_test` (`variant_gtest_test` for the variant test), and registers the JUnit file and a gcovr tracefile. The phony `<name>_test`, the coverage reports and the merged levels come from `TestResultsCMakeGenerator` (below), which a platform that tests must list after it.
 
 A container component compiles nothing itself. An integration component is a component whose sources include those of the components it integrates; it builds like any component, and all its results are container level results (see [Report entry tags](#report-entry-tags)).
@@ -73,6 +75,47 @@ platforms:
             enabled: true
             strict: false # If true, clanguru parsing errors are fatal.
             exclude_symbol_patterns: ["_*"] # Symbols to exclude from mocking.
+```
+
+## `PytestCMakeGenerator`
+
+This generator tests C code with pytest. For each test scope with a `pytest` testing block it builds a shared test library from the scope's sources, generates a Python binding with [clanguru](https://github.com/cuinixam/clanguru) (`clanguru bind`), and runs pytest against it. A function the scope calls but does not define becomes a Python mock: the test sets it, for example with `unittest.mock.Mock`. Blocks of other frameworks are ignored.
+
+**Use Case:** Writing tests for a component, an integration component or a variant in Python, with JUnit results and coverage in the reports.
+
+A test scope is a component, an integration component or the variant. Its files are in the scope's build folder (the `variant_test` folder for the variant), where `<scope>` is the component name or the variant name:
+
+* `<scope>_pytest.<dll|so|dylib>`: the test library, with coverage.
+* `<scope>_binding.py`: the module a test imports.
+* `<scope>_binding_mocks.c`: the generated C functions that forward to the Python mocks.
+* `<scope>_pytest_junit.xml`: the JUnit file, registered for the reports.
+
+The generated mocks file and the mockup sources are built without coverage instrumentation, so they do not count in coverage.
+
+pytest runs as `<python> -m pytest` in the interpreter that runs yanga, in the project folder, with the scope's build folder on `PYTHONPATH`. The run targets are `<name>_pytest_test` and `variant_pytest_test`. The phony `<name>_test`, the coverage reports and the merged levels come from `TestResultsCMakeGenerator`, as for gtest.
+
+* pytest must be installed in the project's Python environment. Without it, yanga stops when it generates the build files and names pytest.
+* A component without sources cannot have a `pytest` block.
+* A failing test does not fail the build. The result is in the JUnit file and the report.
+* `config.mocking.enabled: false` is an error, because the binding always needs the mocks.
+
+List the generator after `GTestCMakeGenerator` (if the platform has it) and before `TestResultsCMakeGenerator`, `SphinxTestReportCMakeGenerator` and `ReportCMakeGenerator`, which read what it registers.
+
+**Configuration:**
+
+```yaml
+platforms:
+  - name: pytest
+    generators:
+      - step: PytestCMakeGenerator
+        module: yanga.cmake.pytest
+        config:
+          # Can be overridden in the 'config.mocking' of each component's pytest testing block.
+          mocking:
+            strict: false # If true, an undefined symbol without a declaration is fatal.
+            exclude_symbol_patterns: ["_*"] # Symbols to exclude from binding and mocking.
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
 ```
 
 ## `TestResultsCMakeGenerator`

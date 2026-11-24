@@ -398,6 +398,14 @@ def test_block_mocking_does_not_leak_into_the_next_component(tmp_path: Path, out
     assert strictness == {"mockup_CompA": True, "mockup_CompB": False}
 
 
+MOCKUP_COMPILE_OPTIONS = [
+    "-ggdb",
+    "-fno-profile-arcs",
+    "-fno-test-coverage",
+    "$<$<AND:$<C_COMPILER_ID:GNU>,$<VERSION_GREATER_EQUAL:$<C_COMPILER_VERSION>,14>>:-fno-condition-coverage>",
+]
+
+
 def generate_with_mockups(tmp_path: Path, output_dir: Path, automock: bool) -> list[CMakeElement]:
     testing = TestingBlockConfig(framework="gtest", sources=["test_compA.cc"], mockup_sources=["fake_os.c"])
     return GTestCMakeGenerator(make_gtest_context(tmp_path, [comp_a_config(testing)]), output_dir, {"mocking": {"enabled": automock}}).generate()
@@ -410,8 +418,7 @@ def test_mockup_sources_are_built_without_coverage_and_linked(tmp_path: Path, ou
     library = assert_element_of_type(elements, CMakeAddLibrary, lambda lib: lib.name == "CompA_mockups")
     assert library.target_name == "CompA_mockups_lib"
     assert library.files == [tmp_path / "compA" / "fake_os.c"]
-    assert "-ggdb" in library.compile_options
-    assert "--coverage" not in library.compile_options
+    assert library.compile_options == MOCKUP_COMPILE_OPTIONS
     assert library.component_name == "CompA"
     executable = assert_element_of_type(elements, CMakeAddExecutable)
     assert "CompA_mockups_lib" in executable.libraries
@@ -478,7 +485,7 @@ def test_variant_test_executable_links_every_component(tmp_path: Path, output_di
     assert "CompA_mockups_lib" not in executable.libraries
     library = assert_element_of_type(elements, CMakeAddLibrary, lambda lib: lib.name == "variant_test_mockups")
     assert library.files == [tmp_path / "fake_os.c"]
-    assert "--coverage" not in library.compile_options
+    assert library.compile_options == MOCKUP_COMPILE_OPTIONS
     properties = assert_element_of_type(elements, CMakeSetTargetProperties, lambda props: props.target == "mock_variant_variant_test")
     assert str(properties.properties["RUNTIME_OUTPUT_DIRECTORY"]) == variant_test_dir
     assert len([target for target in find_elements_of_type(elements, CMakeCustomTarget) if target.name == "mockup"]) == automock
