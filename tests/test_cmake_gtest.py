@@ -27,9 +27,10 @@ from yanga.cmake.cmake_backend import (
     CMakeVariable,
     IncludeScope,
 )
-from yanga.cmake.coverage import CoverageArtifactsLocator, CoverageRelevantFile
-from yanga.cmake.gtest import GTestCMakeArtifactsLocator, GTestCMakeGenerator, GTestCMakeGeneratorConfig, GTestComponentCMakeGenerator
+from yanga.cmake.coverage import CoverageRelevantFile
+from yanga.cmake.gtest import GTEST_FRAMEWORK, GTestCMakeArtifactsLocator, GTestCMakeGenerator, GTestCMakeGeneratorConfig, GTestComponentCMakeGenerator
 from yanga.cmake.sphinx_test_report import TestResultFile
+from yanga.cmake.test_results import TestResultsCMakeGenerator
 
 
 @pytest.fixture
@@ -42,6 +43,10 @@ def execution_context(execution_context: ExecutionContext) -> ExecutionContext:
 @pytest.fixture
 def gtest_cmake_generator(execution_context: ExecutionContext, output_dir: Path) -> GTestCMakeGenerator:
     return GTestCMakeGenerator(execution_context, output_dir)
+
+
+def generate_with_collector(execution_context: ExecutionContext, output_dir: Path) -> list[CMakeElement]:
+    return [*GTestCMakeGenerator(execution_context, output_dir).generate(), *TestResultsCMakeGenerator(execution_context, output_dir).generate()]
 
 
 def test_gtest_dir_is_resolved_from_the_external_project_registry(execution_context: ExecutionContext, output_dir: Path) -> None:
@@ -80,8 +85,22 @@ def test_cmake_build_components_file(
     assert {lib.name for lib in object_libraries} == {"CompA_PC", "CompBNotTestable_PC"}
     executable = assert_element_of_type(elements, CMakeAddExecutable)
     assert executable.name == "CompA"
-    targets = assert_elements_of_type(elements, CMakeCustomTarget, 4)
-    assert {target.name for target in targets} == {"CompA_mockup", "CompA_test", "CompA_build", "CompA_coverage"}
+    targets = assert_elements_of_type(elements, CMakeCustomTarget, 2)
+    assert {target.name for target in targets} == {"CompA_mockup", "CompA_gtest_test"}
+
+
+def test_component_registers_its_gtest_run_target_and_tracefile(execution_context: ExecutionContext, output_dir: Path) -> None:
+    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "CompA_gtest_test")
+    assert "${CMAKE_BUILD_DIR}/CompA/CompA_junit.xml" in [str(depend) for depend in target.depends or []]
+    [test_result] = execution_context.data_registry.find_data(TestResultFile)
+    assert (test_result.framework, test_result.target.target_name) == (GTEST_FRAMEWORK, "CompA_gtest_test")
+    [coverage_file] = execution_context.data_registry.find_data(CoverageRelevantFile)
+    assert (coverage_file.framework, coverage_file.target.target_name) == (GTEST_FRAMEWORK, "CompA_coverage")
+    assert coverage_file.json_report.to_path() == output_dir / "CompA" / "coverage.json"
+    command = assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: "coverage report for component" in cmd.description)
+    assert [str(output) for output in command.outputs or []] == ["${CMAKE_BUILD_DIR}/CompA/gcovr.cfg", "${CMAKE_BUILD_DIR}/CompA/coverage.json"]
 
 
 def test_get_include_directories(gtest_cmake_generator: GTestCMakeGenerator) -> None:
@@ -89,53 +108,40 @@ def test_get_include_directories(gtest_cmake_generator: GTestCMakeGenerator) -> 
 
 
 def test_gtest_cmake_generator_coverage(execution_context: ExecutionContext, output_dir: Path) -> None:
-    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+    elements = generate_with_collector(execution_context, output_dir)
 
-    # Test that coverage targets are created
-    targets = assert_elements_of_type(elements, CMakeCustomTarget, 6)
-    assert {target.name for target in targets} == {"CompA_mockup", "CompA_test", "CompA_build", "CompA_coverage", "coverage", "overall_coverage"}
-
-    # Test component coverage target
+    targets = assert_elements_of_type(elements, CMakeCustomTarget, 7)
+    assert {target.name for target in targets} == {"CompA_mockup", "CompA_gtest_test", "CompA_test", "CompA_build", "CompA_coverage", "coverage", "overall_coverage"}
     component_coverage_target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "CompA_coverage")
     assert "Generate coverage report for CompA" in component_coverage_target.description
-
-    # Test variant coverage target
     variant_coverage_target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "coverage")
     assert "Generate variant coverage report" in variant_coverage_target.description
 
-    # Test that coverage commands are generated
     coverage_commands = find_elements_of_type(elements, CMakeCustomCommand)
     component_coverage_cmds = [cmd for cmd in coverage_commands if "coverage report for component" in cmd.description]
     variant_coverage_cmds = [cmd for cmd in coverage_commands if "coverage report for the variant" in cmd.description]
-
-    assert len(component_coverage_cmds) == 1, "Should generate component coverage commands"
+    assert len(component_coverage_cmds) == 2, "The tracefile command and the html merge of the component"
     assert len(variant_coverage_cmds) == 1, "Should generate variant coverage commands"
 
-    # Test that coverage outputs are generated (config, JSON, HTML)
-    component_cmd = component_coverage_cmds[0]
-    assert component_cmd.outputs, "Component coverage command should have outputs"
-    output_paths = [str(output) for output in component_cmd.outputs]
+    output_paths = [str(output) for cmd in component_coverage_cmds for output in cmd.outputs or []]
     assert any("gcovr.cfg" in path for path in output_paths), "Should generate gcovr config"
     assert any("coverage.json" in path for path in output_paths), "Should generate JSON report"
     assert any("index.html" in path for path in output_paths), "Should generate HTML report"
-
-    # Test that the right tools are used
-    assert component_cmd.commands, "Component coverage command should have subcommands"
-    command_tools = [str(cmd.command) for cmd in component_cmd.commands]
+    command_tools = [str(cmd.command) for component_cmd in component_coverage_cmds for cmd in component_cmd.commands]
     assert any("yanga_cmd" in tool for tool in command_tools), "Should use yanga_cmd for config"
     assert any("gcovr" in tool for tool in command_tools), "Should use gcovr for reports"
 
 
 def test_junit_report_is_registered_as_test_result(execution_context: ExecutionContext, output_dir: Path) -> None:
-    GTestCMakeGenerator(execution_context, output_dir).generate()
+    generate_with_collector(execution_context, output_dir)
 
     test_results = execution_context.data_registry.find_data(TestResultFile)
-    assert [entry.target.target_name for entry in test_results] == ["CompA_test"]
+    assert [entry.target.target_name for entry in test_results] == ["CompA_gtest_test"]
     assert test_results[0].junit_report.to_path().name == "CompA_junit.xml"
 
 
 def test_coverage_targets_register_clean_files(execution_context: ExecutionContext, output_dir: Path) -> None:
-    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+    elements = generate_with_collector(execution_context, output_dir)
 
     clean_files = find_elements_of_type(elements, CMakeAddTargetCleanFiles)
     by_target = {entry.target: entry for entry in clean_files}
@@ -160,7 +166,7 @@ def test_no_path_is_both_tracked_output_and_clean_file(execution_context: Execut
     Ninja's clean calls POSIX remove() on tracked outputs, which fails on
     non-empty directories. Such directories must be tracked only via stamp files.
     """
-    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+    elements = generate_with_collector(execution_context, output_dir)
 
     tracked_outputs = {str(output) for cmd in find_elements_of_type(elements, CMakeCustomCommand) for output in cmd.outputs or []}
     clean_files = {str(file) for entry in find_elements_of_type(elements, CMakeAddTargetCleanFiles) for file in entry.files}
@@ -207,8 +213,8 @@ def test_automock_disabled_generates_no_mock_targets(execution_context: Executio
     elements = GTestCMakeGenerator(execution_context, output_dir, {"mocking": {"enabled": False}}).generate()
 
     # No mockup-related custom targets should be generated.
-    targets = assert_elements_of_type(elements, CMakeCustomTarget, 5)
-    assert {target.name for target in targets} == {"CompA_test", "CompA_build", "CompA_coverage", "coverage", "overall_coverage"}
+    targets = assert_elements_of_type(elements, CMakeCustomTarget, 1)
+    assert {target.name for target in targets} == {"CompA_gtest_test"}
 
     # No partial link library should be generated.
     object_libraries = assert_elements_of_type(elements, CMakeAddLibrary, 2)
@@ -428,8 +434,11 @@ def container_elements(container_execution_context: ExecutionContext, output_dir
     return GTestCMakeGenerator(container_execution_context, output_dir).generate()
 
 
-def test_container_test_target_runs_subcomponent_tests(container_elements: list[CMakeElement]) -> None:
-    targets = {target.name: list(target.depends or []) for target in find_elements_of_type(container_elements, CMakeCustomTarget)}
+def test_container_test_target_runs_subcomponent_tests(container_execution_context: ExecutionContext, output_dir: Path) -> None:
+    container_execution_context.data_registry.insert(ExternalProject(name="googletest", revision="v1.17.0", path=Path("ext/gtest/v1.17.0")), provider="WestInstall")
+    elements = generate_with_collector(container_execution_context, output_dir)
+
+    targets = {target.name: list(target.depends or []) for target in find_elements_of_type(elements, CMakeCustomTarget)}
 
     assert targets["net_test"] == targets["net_build"] == ["tcp_test"]
     assert targets["group_test"] == ["tcp_test"]
@@ -491,7 +500,7 @@ def test_variant_mockup_is_generated_from_all_components(tmp_path: Path, output_
 def test_variant_test_runs_and_registers_its_junit_result(tmp_path: Path, output_dir: Path) -> None:
     execution_context = variant_test_context(tmp_path, variant_gtest_block(tmp_path))
 
-    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+    elements = generate_with_collector(execution_context, output_dir)
 
     junit_report = output_dir / "variant_test" / "variant_test_junit.xml"
     run = assert_element_of_type(
@@ -500,9 +509,9 @@ def test_variant_test_runs_and_registers_its_junit_result(tmp_path: Path, output
     assert "GCOV_PREFIX=${CMAKE_BUILD_DIR}/variant_test/gcov" in run.to_string()
     target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "test")
     assert target.default_target
-    assert "${CMAKE_BUILD_DIR}/variant_test/variant_test_junit.xml" in [str(depend) for depend in target.depends or []]
+    assert "variant_gtest_test" in [str(depend) for depend in target.depends or []]
     [test_result] = [entry for entry in execution_context.data_registry.find_data(TestResultFile) if entry.target.scope == UserRequestScope.VARIANT]
-    assert test_result.target.target_name == "test"
+    assert test_result.target.target_name == "variant_gtest_test"
     assert test_result.junit_report.to_path() == junit_report
     assert test_result.test_sources == [tmp_path / "test_variant.cc"]
 
@@ -521,7 +530,44 @@ def test_variant_without_gtest_sources_generates_as_before(tmp_path: Path, outpu
     elements = GTestCMakeGenerator(execution_context, output_dir).generate()
 
     assert [element.to_string() for element in elements] == expected
-    assert [entry.target.target_name for entry in execution_context.data_registry.find_data(TestResultFile)] == ["CompA_test"]
+    assert [entry.target.target_name for entry in execution_context.data_registry.find_data(TestResultFile)] == ["CompA_gtest_test"]
+
+
+def test_variant_test_registers_its_run_target_and_tracefile(tmp_path: Path, output_dir: Path) -> None:
+    execution_context = variant_test_context(tmp_path, variant_gtest_block(tmp_path))
+
+    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "variant_gtest_test")
+    assert "${CMAKE_BUILD_DIR}/variant_test/variant_test_junit.xml" in [str(depend) for depend in target.depends or []]
+    [test_result] = [entry for entry in execution_context.data_registry.find_data(TestResultFile) if entry.target.scope == UserRequestScope.VARIANT]
+    assert (test_result.framework, test_result.target.target_name) == (GTEST_FRAMEWORK, "variant_gtest_test")
+    [coverage_file] = [entry for entry in execution_context.data_registry.find_data(CoverageRelevantFile) if entry.target.scope == UserRequestScope.VARIANT]
+    assert (coverage_file.framework, coverage_file.target.target_name) == (GTEST_FRAMEWORK, "variant_test_coverage")
+    assert coverage_file.json_report.to_path() == output_dir / "variant_test" / "coverage.json"
+    outputs = [str(output) for output in variant_test_coverage_command(elements).outputs or []]
+    assert outputs == ["${CMAKE_BUILD_DIR}/variant_test/gcovr.cfg", "${CMAKE_BUILD_DIR}/variant_test/coverage.json"]
+
+
+def test_gtest_registers_no_report_coverage_entry(tmp_path: Path, output_dir: Path) -> None:
+    execution_context = variant_test_context(tmp_path, variant_gtest_block(tmp_path))
+
+    GTestCMakeGenerator(execution_context, output_dir).generate()
+
+    entries = execution_context.data_registry.find_data(ReportRelevantFiles)
+    assert [entry for entry in entries if entry.file_type == ReportRelevantFileType.COVERAGE_RESULT] == []
+
+
+def test_no_phony_target_defined_twice(execution_context: ExecutionContext, output_dir: Path) -> None:
+    gtest_elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+    gtest_names = {target.name for target in find_elements_of_type(gtest_elements, CMakeCustomTarget)}
+
+    collector_elements = TestResultsCMakeGenerator(execution_context, output_dir).generate()
+
+    names = [target.name for target in find_elements_of_type([*gtest_elements, *collector_elements], CMakeCustomTarget)]
+    assert len(names) == len(set(names))
+    assert gtest_names == {"CompA_mockup", "CompA_gtest_test"}
+    assert not find_elements_of_type(gtest_elements, CMakeAddTargetCleanFiles)
 
 
 def variant_test_coverage_command(elements: list[CMakeElement]) -> CMakeCustomCommand:
@@ -538,28 +584,6 @@ def test_variant_test_coverage_reads_its_own_gcda_files(tmp_path: Path, output_d
     assert {"$<TARGET_OBJECTS:CompA_PC_lib>", "$<TARGET_OBJECTS:CompB_PC_lib>", (tmp_path / "compA" / "compA.c").as_posix(), (tmp_path / "compB" / "compB.c").as_posix()} <= set(
         arguments
     )
-    index_html = "${CMAKE_BUILD_DIR}/reports/variant_test_coverage/index.html"
-    assert index_html in [str(output) for output in command.outputs or []]
-    target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == "variant_test_coverage")
-    assert index_html in [str(depend) for depend in target.depends or []]
-
-
-def test_variant_test_coverage_is_its_own_report_page(tmp_path: Path, output_dir: Path) -> None:
-    execution_context = variant_test_context(tmp_path, variant_gtest_block(tmp_path))
-
-    GTestCMakeGenerator(execution_context, output_dir).generate()
-
-    variant_pages = {
-        entry.target.target_name: entry
-        for entry in execution_context.data_registry.find_data(ReportRelevantFiles)
-        if entry.target.scope == UserRequestScope.VARIANT and entry.file_type == ReportRelevantFileType.COVERAGE_RESULT
-    }
-    assert set(variant_pages) == {"coverage", "variant_test_coverage", "overall_coverage"}
-    html_content = variant_pages["variant_test_coverage"].html_content
-    assert html_content is not None
-    assert html_content.name == "Coverage"
-    assert html_content.index_html == Path("variant_test_coverage/index.html")
-    assert [entry.target.target_name for entry in execution_context.data_registry.find_data(CoverageRelevantFile)] == ["CompA_coverage"]
 
 
 def test_variant_test_leaves_out_the_integration_component(tmp_path: Path, output_dir: Path) -> None:
@@ -605,6 +629,24 @@ def test_component_and_variant_test_coverage_use_the_project_root(tmp_path: Path
     assert project_dirs == [tmp_path.as_posix()] * 2
 
 
+def test_variant_test_coverage_is_its_own_report_page(tmp_path: Path, output_dir: Path) -> None:
+    execution_context = variant_test_context(tmp_path, variant_gtest_block(tmp_path))
+
+    generate_with_collector(execution_context, output_dir)
+
+    variant_pages = {
+        entry.target.target_name: entry
+        for entry in execution_context.data_registry.find_data(ReportRelevantFiles)
+        if entry.target.scope == UserRequestScope.VARIANT and entry.file_type == ReportRelevantFileType.COVERAGE_RESULT
+    }
+    assert set(variant_pages) == {"coverage", "variant_test_coverage", "overall_coverage"}
+    page = output_dir / "variant_test_coverage.md"
+    assert variant_pages["variant_test_coverage"].files_to_be_included == [page]
+    assert page.read_text().splitlines()[0] == "# Coverage"
+    assert "./variant_test_coverage/index.html" in page.read_text()
+    assert [entry.target.target_name for entry in execution_context.data_registry.find_data(CoverageRelevantFile)] == ["CompA_coverage", "variant_test_coverage"]
+
+
 def test_component_and_variant_test_coverage_are_tagged_with_their_level(tmp_path: Path, output_dir: Path) -> None:
     configs = [
         comp_a_config(TestingBlockConfig(framework="gtest", sources=["test_compA.cc"])),
@@ -613,12 +655,12 @@ def test_component_and_variant_test_coverage_are_tagged_with_their_level(tmp_pat
     execution_context = make_gtest_context(tmp_path, configs)
     cast(Mock, execution_context).variant_testing = [variant_gtest_block(tmp_path)]
 
-    GTestCMakeGenerator(execution_context, output_dir).generate()
+    generate_with_collector(execution_context, output_dir)
 
     tags = {entry.target.target_name: set(entry.tags) for entry in execution_context.data_registry.find_data(ReportRelevantFiles)}
-    assert tags["CompA_coverage"] == {"component", "CompA", "coverage"}
-    assert tags["IntegA_coverage"] == {"container", "IntegA", "coverage"}
-    assert tags["variant_test_coverage"] == {"variant", "coverage"}
+    assert tags["CompA_coverage"] == {"component", "CompA", "coverage", "gcovr", "gtest"}
+    assert tags["IntegA_coverage"] == {"container", "IntegA", "coverage", "gcovr", "gtest"}
+    assert tags["variant_test_coverage"] == {"variant", "coverage", "gcovr", "gtest"}
 
 
 def merged_coverage_context(tmp_path: Path) -> ExecutionContext:
@@ -637,40 +679,6 @@ def merged_coverage_context(tmp_path: Path) -> ExecutionContext:
 
 
 @pytest.mark.parametrize(
-    ("target_name", "expected_tags", "index_html", "reports_dir", "tracefiles"),
-    [
-        ("coverage", {"component", "merged", "coverage"}, "coverage/index.html", "reports", ["CompA", "tcp"]),
-        ("net_coverage", {"container", "net", "coverage"}, "coverage/net/index.html", "net/reports", ["tcp"]),
-        ("all_containers_coverage", {"container", "merged", "coverage"}, "all_containers_coverage/index.html", "reports", ["IntegA", "tcp"]),
-        ("overall_coverage", {"overall", "coverage"}, "overall_coverage/index.html", "reports", ["CompA", "IntegA", "tcp", "variant_test"]),
-    ],
-)
-def test_merged_coverage_reads_the_tracefiles_of_its_level(
-    tmp_path: Path, output_dir: Path, target_name: str, expected_tags: set[str], index_html: str, reports_dir: str, tracefiles: list[str]
-) -> None:
-    execution_context = merged_coverage_context(tmp_path)
-
-    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
-
-    [variant_test_json] = [str(output) for output in variant_test_coverage_command(elements).outputs or [] if str(output).endswith(".json")]
-    assert variant_test_json.startswith("${CMAKE_BUILD_DIR}/variant_test/")
-    expected_tracefiles = sorted(variant_test_json if name == "variant_test" else f"${{CMAKE_BUILD_DIR}}/{name}/coverage.json" for name in tracefiles)
-    [entry] = [entry for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.target_name == target_name]
-    assert set(entry.tags) == expected_tags
-    assert entry.file_type == ReportRelevantFileType.COVERAGE_RESULT
-    assert entry.html_content is not None
-    assert entry.html_content.index_html == Path(index_html)
-    html_file = f"${{CMAKE_BUILD_DIR}}/{reports_dir}/{index_html}"
-    merge = assert_element_of_type(elements, CMakeCustomCommand, lambda cmd: html_file in [str(output) for output in cmd.outputs or []])
-    arguments = command_arguments(merge)
-    assert sorted(arguments[index + 1] for index, argument in enumerate(arguments) if argument == "--add-tracefile") == expected_tracefiles
-    assert "gcovr_config_variant" not in arguments
-    assert set(expected_tracefiles) <= {str(depend) for depend in merge.depends or []}
-    target = assert_element_of_type(elements, CMakeCustomTarget, lambda tgt: tgt.name == target_name)
-    assert html_file in [str(depend) for depend in target.depends or []]
-
-
-@pytest.mark.parametrize(
     ("configs", "variant_test", "expected_targets"),
     [
         ([comp_a_config(TestingBlockConfig(framework="gtest", sources=["test.cc"]))], False, {"CompA_coverage", "coverage", "overall_coverage"}),
@@ -683,32 +691,20 @@ def test_merged_coverage_is_left_out_for_an_empty_level(tmp_path: Path, output_d
     execution_context = make_gtest_context(tmp_path, configs)
     cast(Mock, execution_context).variant_testing = [variant_gtest_block(tmp_path)] * variant_test
 
-    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
+    elements = generate_with_collector(execution_context, output_dir)
 
     registered = {entry.target.target_name for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.file_type == ReportRelevantFileType.COVERAGE_RESULT}
     assert registered == expected_targets
     assert {target.name for target in find_elements_of_type(elements, CMakeCustomTarget) if target.name.endswith("coverage")} == expected_targets
 
 
-@pytest.mark.parametrize("component_name", ["CompA", "net"])
-def test_coverage_html_copy_depends_on_the_report_file(tmp_path: Path, output_dir: Path, component_name: str) -> None:
-    execution_context = merged_coverage_context(tmp_path)
-
-    elements = GTestCMakeGenerator(execution_context, output_dir).generate()
-
-    html_file = CoverageArtifactsLocator(output_dir, execution_context.spl_paths).get_component_coverage_html_file(component_name)
-    copy = assert_element_of_type(
-        elements, CMakeCustomCommand, lambda cmd: cmd.description == f"Copy coverage html report for component {component_name} to variant report directory"
-    )
-    assert str(html_file) in [str(depend) for depend in copy.depends or []]
-
-
 @pytest.mark.parametrize("target_name", ["CompA_coverage", "IntegA_coverage", "net_coverage", "coverage", "all_containers_coverage", "variant_test_coverage", "overall_coverage"])
 def test_every_coverage_page_is_named_coverage(tmp_path: Path, output_dir: Path, target_name: str) -> None:
     execution_context = merged_coverage_context(tmp_path)
 
-    GTestCMakeGenerator(execution_context, output_dir).generate()
+    generate_with_collector(execution_context, output_dir)
 
     [entry] = [entry for entry in execution_context.data_registry.find_data(ReportRelevantFiles) if entry.target.target_name == target_name]
-    assert entry.html_content is not None
-    assert entry.html_content.name == "Coverage"
+    [page] = entry.files_to_be_included
+    assert entry.html_content is None
+    assert page.read_text().splitlines()[0] == "# Coverage"

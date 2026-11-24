@@ -13,17 +13,15 @@ from yanga_core.domain.component_resolver import find_testing_block, resolve_inc
 from yanga_core.domain.components import Component, TestingBlock
 from yanga_core.domain.config import MockingConfig
 from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
-from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType, ReportRelevantHtmlContent
 
 from yanga.cmake.artifacts_locator import BuildArtifact, CMakeArtifactsLocator
-from yanga.cmake.coverage import CoverageArtifactsLocator, CoverageRelevantFile
-from yanga.cmake.sphinx_test_report import TestResultFile
+from yanga.cmake.coverage import CoverageArtifactsLocator, CoverageRelevantFile, create_coverage_tracefile_command
+from yanga.cmake.sphinx_test_report import GTEST_FRAMEWORK, TestResultFile
 
 from .cmake_backend import (
     CMakeAddExecutable,
     CMakeAddLibrary,
     CMakeAddSubdirectory,
-    CMakeAddTargetCleanFiles,
     CMakeCommand,
     CMakeComment,
     CMakeCustomCommand,
@@ -36,11 +34,9 @@ from .cmake_backend import (
     CMakeTargetIncludeDirectories,
     CMakeVariable,
     IncludeScope,
-    cmake_directory_provider,
 )
-from .generator import CMakeGenerator, report_level, subcomponent_names
+from .generator import CMakeGenerator
 
-GTEST_FRAMEWORK = "gtest"
 VARIANT_TEST_NAME = "variant_test"
 
 
@@ -225,9 +221,8 @@ class GTestComponentCMakeGenerator:
 
         elements: list[CMakeElement] = []
         elements.append(CMakeComment(f"Component {component.name}"))
-        # A container compiles nothing itself; it only runs its subcomponents' tests.
+        # A container compiles nothing itself; the collector runs its subcomponents' tests.
         if component.is_container:
-            elements.extend(self._test_targets(component, self._subcomponent_test_targets(component)))
             elements.append(CMakeEmptyLine())
             return elements
 
@@ -297,17 +292,19 @@ class GTestComponentCMakeGenerator:
             execute_tests_command = self.run_executable(component.name, test_executable.name)
             elements.append(execute_tests_command)
             # Register the JUnit report for the generators that render it (e.g. SphinxTestReportCMakeGenerator)
-            component_test_target = UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=UserRequestTarget.TEST)
+            component_test_target = UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=f"{GTEST_FRAMEWORK}_test")
+            elements.append(CMakeCustomTarget(component_test_target.target_name, f"Execute tests for {component.name}", [], execute_tests_command.outputs or [], True))
             self.execution_context.data_registry.insert(
                 TestResultFile(
                     target=component_test_target,
                     junit_report=self.artifacts_locator.get_component_build_dir(component.name).joinpath(f"{component.name}_junit.xml"),
+                    framework=GTEST_FRAMEWORK,
                     test_sources=testing_block.sources,
                 ),
                 component_test_target.target_name,
             )
 
-            # Generate coverage report
+            # Generate the coverage tracefile; the collector merges it and builds the reports
             coverage_cmd = self.create_coverage_report(component.name, execute_tests_command, productive_sources, component_sources_object_library.target_name)
             elements.append(coverage_cmd)
             component_coverage_target = UserRequest(
@@ -315,51 +312,11 @@ class GTestComponentCMakeGenerator:
                 component_name=component.name,
                 target=UserRequestTarget.COVERAGE,
             )
-
-            elements.append(
-                CMakeCustomTarget(
-                    name=component_coverage_target.target_name,
-                    description=f"Generate coverage report for {component.name}",
-                    commands=[],
-                    depends=coverage_cmd.outputs,
-                )
-            )
-
-            coverage_artifacts_locator = CoverageArtifactsLocator.from_cmake_artifacts_locator(self.artifacts_locator)
-            # The gcovr --html-nested run populates the component coverage html dir with files
-            # that ninja does not track. Register the directory for recursive removal on `clean`.
-            elements.append(
-                CMakeAddTargetCleanFiles(
-                    target=component_coverage_target.target_name,
-                    files=[coverage_artifacts_locator.get_component_coverage_reports_dir(component.name)],
-                )
-            )
-
-            # Register the component coverage html report as relevant for the component report
-            # When registering an html content, the path shall be relative to the reports directory
-            index_html = (
-                coverage_artifacts_locator.get_component_coverage_html_file(component.name)
-                .to_path()
-                .relative_to(coverage_artifacts_locator.get_component_reports_dir(component.name).to_path())
-            )
-            self.execution_context.data_registry.insert(
-                ReportRelevantFiles(
-                    target=component_coverage_target,
-                    files_to_be_included=[],
-                    file_type=ReportRelevantFileType.COVERAGE_RESULT,
-                    html_content=ReportRelevantHtmlContent(
-                        name="Coverage",
-                        index_html=index_html,
-                    ),
-                    tags=[report_level(component), component.name, "coverage"],
-                ),
-                component_coverage_target.target_name,
-            )
-            # Register the component coverage json report as relevant for the merged coverage report
             self.execution_context.data_registry.insert(
                 CoverageRelevantFile(
                     target=component_coverage_target,
                     json_report=self.artifacts_locator.get_component_build_artifact(component.name, BuildArtifact.COVERAGE_JSON),
+                    framework=GTEST_FRAMEWORK,
                 ),
                 component_coverage_target.target_name,
             )
@@ -367,35 +324,11 @@ class GTestComponentCMakeGenerator:
             # Create the component mockup sources
             if mockup_generator:
                 elements.extend(mockup_generator.generate())
-
-            # Create the component custom targets
-            elements.extend(self._test_targets(component, execute_tests_command.outputs or []))
         else:
             elements.append(CMakeComment(f"Component {component.name} is not testable, only compiling sources."))
         elements.append(CMakeEmptyLine())
 
         return elements
-
-    def _test_targets(self, component: Component, depends: Sequence[str | CMakePath]) -> list[CMakeElement]:
-        return [
-            CMakeCustomTarget(
-                UserRequest(UserRequestScope.COMPONENT, component_name=component.name, target=target).target_name,
-                f"Execute tests for {component.name}",
-                [],
-                depends,
-                True,
-            )
-            for target in (UserRequestTarget.TEST, UserRequestTarget.BUILD)
-        ]
-
-    def _subcomponent_test_targets(self, component: Component) -> list[str]:
-        """Test targets of the testable subcomponents, recursively, so running a container's tests runs theirs too."""
-        targets: list[str] = []
-        for subcomponent in component.subcomponents:
-            if subcomponent.is_testable(GTEST_FRAMEWORK):
-                targets.append(UserRequest(UserRequestScope.COMPONENT, component_name=subcomponent.name, target=UserRequestTarget.TEST).target_name)
-            targets.extend(self._subcomponent_test_targets(subcomponent))
-        return targets
 
     def _determine_component_generator_config(self, testing_block: TestingBlock | None) -> GTestCMakeGeneratorConfig:
         """Merge the block's ``config.mocking`` over the platform mocking into a new config; the shared generator config stays untouched."""
@@ -454,63 +387,15 @@ class GTestComponentCMakeGenerator:
         component_build_dir = artifacts_locator.get_component_build_dir(component_name)
         gcovr_config_file = component_build_dir.joinpath("gcovr.cfg")
         gcovr_json_file = artifacts_locator.get_component_build_artifact(component_name, BuildArtifact.COVERAGE_JSON)
-        gcovr_html_dir = artifacts_locator.get_component_coverage_reports_dir(component_name)
-        gcovr_html_file = artifacts_locator.get_component_coverage_html_file(component_name)
 
-        return CMakeCustomCommand(
-            description=f"Generate coverage report for component {component_name}",
-            outputs=[gcovr_config_file, gcovr_json_file, gcovr_html_file],
-            depends=execute_tests_command.outputs,
-            command_expand_lists=True,
-            commands=[
-                CMakeCommand(
-                    "yanga_cmd",
-                    [
-                        "gcovr_config_component",
-                        "--component-objects",
-                        f"$<TARGET_OBJECTS:{component_object_library}>",
-                        "--source-files",
-                        *[CMakePath(src) for src in sources],
-                        "--project-dir",
-                        CMakePath(self.execution_context.project_root_dir),
-                        "--output-file",
-                        gcovr_config_file,
-                    ],
-                ),
-                CMakeCommand(
-                    "gcovr",
-                    [
-                        "--config",
-                        gcovr_config_file,
-                        "--json",
-                        "--output",
-                        gcovr_json_file,
-                        "--json-pretty",
-                    ],
-                ),
-                CMakeCommand(
-                    "${CMAKE_COMMAND}",
-                    [
-                        "-E",
-                        "make_directory",
-                        gcovr_html_dir,
-                    ],
-                ),
-                CMakeCommand(
-                    "gcovr",
-                    [
-                        "--config",
-                        gcovr_config_file,
-                        "--add-tracefile",
-                        gcovr_json_file,
-                        "--html-nested",
-                        "--html-theme",
-                        "boost.blue",
-                        "--output",
-                        gcovr_html_file,
-                    ],
-                ),
-            ],
+        return create_coverage_tracefile_command(
+            f"Generate coverage report for component {component_name}",
+            execute_tests_command.outputs,
+            [component_object_library],
+            sources,
+            self.execution_context.project_root_dir,
+            gcovr_config_file,
+            gcovr_json_file,
         )
 
 
@@ -536,7 +421,6 @@ class GTestCMakeGenerator(CMakeGenerator):
         elements.extend(self.create_gtest_integration_cmake_elements())
         elements.extend(self.create_components_cmake_elements())
         elements.extend(self.create_variant_test_cmake_elements())
-        elements.extend(self.create_variant_cmake_elements())
         return elements
 
     def create_gtest_integration_cmake_elements(self) -> list[CMakeElement]:
@@ -650,10 +534,10 @@ class GTestCMakeGenerator(CMakeGenerator):
             ],
         )
         elements.append(execute_tests_command)
-        variant_test_target = UserRequest(UserRequestScope.VARIANT, target=UserRequestTarget.TEST)
+        variant_test_target = UserRequest(UserRequestScope.VARIANT, target=f"variant_{GTEST_FRAMEWORK}_test")
         elements.append(CMakeCustomTarget(variant_test_target.target_name, f"Execute the variant test of {self.variant_name}", [], [junit_report], True))
         self.execution_context.data_registry.insert(
-            TestResultFile(target=variant_test_target, junit_report=junit_report, test_sources=testing_block.sources),
+            TestResultFile(target=variant_test_target, junit_report=junit_report, framework=GTEST_FRAMEWORK, test_sources=testing_block.sources),
             variant_test_target.target_name,
         )
 
@@ -673,252 +557,23 @@ class GTestCMakeGenerator(CMakeGenerator):
         return [component for component in self.execution_context.components if not component.is_container and not component.integrates]
 
     def create_variant_test_coverage(self, execute_tests_command: CMakeCustomCommand, object_libraries: list[str], sources: list[Path], gcov_dir: CMakePath) -> list[CMakeElement]:
-        """A page of its own, so the merged component coverage of the variant report stays as it is."""
-        artifacts_locator = CoverageArtifactsLocator.from_cmake_artifacts_locator(self.artifacts_locator)
+        """Write the tracefile of the variant test; the collector builds its own coverage page."""
         build_dir = self.artifacts_locator.cmake_build_dir.joinpath(VARIANT_TEST_NAME)
         gcovr_config_file = build_dir.joinpath("gcovr.cfg")
-        gcovr_json_file = self._variant_test_tracefile()
-        gcovr_html_dir = artifacts_locator.cmake_variant_reports_dir.joinpath(f"{VARIANT_TEST_NAME}_coverage")
-        gcovr_html_file = gcovr_html_dir.joinpath("index.html")
-        coverage_cmd = CMakeCustomCommand(
-            description="Generate coverage report for the variant test",
-            outputs=[gcovr_config_file, gcovr_json_file, gcovr_html_file],
-            depends=execute_tests_command.outputs,
-            command_expand_lists=True,
-            commands=[
-                CMakeCommand(
-                    "yanga_cmd",
-                    [
-                        "gcovr_config_component",
-                        "--component-objects",
-                        *[f"$<TARGET_OBJECTS:{library}>" for library in object_libraries],
-                        "--source-files",
-                        *[CMakePath(source) for source in sources],
-                        "--project-dir",
-                        CMakePath(self.execution_context.project_root_dir),
-                        "--gcov-prefix",
-                        gcov_dir,
-                        "--output-file",
-                        gcovr_config_file,
-                    ],
-                ),
-                CMakeCommand("gcovr", ["--config", gcovr_config_file, "--json", "--output", gcovr_json_file, "--json-pretty"]),
-                CMakeCommand("${CMAKE_COMMAND}", ["-E", "make_directory", gcovr_html_dir]),
-                CMakeCommand(
-                    "gcovr",
-                    ["--config", gcovr_config_file, "--add-tracefile", gcovr_json_file, "--html-nested", "--html-theme", "boost.blue", "--output", gcovr_html_file],
-                ),
-            ],
+        gcovr_json_file = build_dir.joinpath(BuildArtifact.COVERAGE_JSON.path)
+        coverage_cmd = create_coverage_tracefile_command(
+            "Generate coverage report for the variant test",
+            execute_tests_command.outputs,
+            object_libraries,
+            sources,
+            self.execution_context.project_root_dir,
+            gcovr_config_file,
+            gcovr_json_file,
+            gcov_dir,
         )
         coverage_target = UserRequest(UserRequestScope.VARIANT, target=f"{VARIANT_TEST_NAME}_coverage")
         self.execution_context.data_registry.insert(
-            ReportRelevantFiles(
-                target=coverage_target,
-                files_to_be_included=[],
-                file_type=ReportRelevantFileType.COVERAGE_RESULT,
-                html_content=ReportRelevantHtmlContent(
-                    name="Coverage",
-                    # When registering an html content, the path shall be relative to the reports directory
-                    index_html=gcovr_html_file.to_path().relative_to(artifacts_locator.cmake_variant_reports_dir.to_path()),
-                ),
-                tags=["variant", "coverage"],
-            ),
+            CoverageRelevantFile(target=coverage_target, json_report=gcovr_json_file, framework=GTEST_FRAMEWORK),
             coverage_target.target_name,
         )
-        return [
-            coverage_cmd,
-            CMakeCustomTarget(name=coverage_target.target_name, description="Generate coverage report for the variant test", commands=[], depends=coverage_cmd.outputs),
-            # gcovr --html-nested populates the dir with files unknown to ninja
-            CMakeAddTargetCleanFiles(target=coverage_target.target_name, files=[gcovr_html_dir]),
-        ]
-
-    def _variant_test_tracefile(self) -> CMakePath:
-        return self.artifacts_locator.cmake_build_dir.joinpath(VARIANT_TEST_NAME).joinpath(BuildArtifact.COVERAGE_JSON.path)
-
-    def create_variant_cmake_elements(self) -> list[CMakeElement]:
-        """
-        The merged coverage reports, built from the component tracefiles only.
-
-        Unit and integration counters never mix in the all components report: integration tests count only per
-        container, over all containers and overall.
-        """
-        elements: list[CMakeElement] = []
-        artifacts_locator = CoverageArtifactsLocator.from_cmake_artifacts_locator(self.artifacts_locator)
-        variant_reports_dir = artifacts_locator.cmake_variant_reports_dir
-        coverage_files = self.execution_context.data_registry.find_data(CoverageRelevantFile)
-        tracefiles = {entry.target.component_name: entry.json_report for entry in coverage_files if entry.target.component_name}
-        components = {component.name: component for component in self.execution_context.components}
-
-        # Registered before the copy loop below, so the container reports are copied into the variant report like the component ones
-        container_tracefiles: list[CMakePath] = []
-        for container in (component for component in components.values() if component.is_container):
-            subcomponent_tracefiles = [tracefiles[name] for name in subcomponent_names(container) if name in tracefiles]
-            container_tracefiles.extend(subcomponent_tracefiles)
-            if subcomponent_tracefiles:
-                elements.extend(
-                    self._create_merged_coverage(
-                        UserRequest(UserRequestScope.COMPONENT, component_name=container.name, target=UserRequestTarget.COVERAGE),
-                        f"Merge coverage for container {container.name}",
-                        f"Generate coverage report for container {container.name}",
-                        artifacts_locator.get_component_reports_dir(container.name),
-                        artifacts_locator.get_component_coverage_reports_dir(container.name),
-                        subcomponent_tracefiles,
-                        [],
-                        ["container", container.name, "coverage"],
-                    )
-                )
-
-        gcovr_html_dir = artifacts_locator.get_variant_coverage_reports_dir()
-        # One canonical provider for the variant coverage reports directory. Consumers that write into this dir
-        # depend on its stamp; ninja then serializes the make_directory through the dep graph.
-        gcovr_html_dir_provider = cmake_directory_provider(gcovr_html_dir)
-        elements.append(gcovr_html_dir_provider.command)
-
-        # The html coverage reports are generated in the component specific reports directories.
-        # We need to create custom commands to copy them to the variant report directory.
-        targets_with_coverage_results = [
-            entry.target
-            for entry in self.execution_context.data_registry.find_data(ReportRelevantFiles)
-            if entry.file_type == ReportRelevantFileType.COVERAGE_RESULT and entry.target.scope == UserRequestScope.COMPONENT and entry.target.component_name is not None
-        ]
-        copy_stamps: list[CMakePath] = []
-        component_variant_coverage_html_dirs: list[CMakePath] = []
-        for target in targets_with_coverage_results:
-            component_name = target.component_name
-            if component_name is None:
-                raise ValueError("Component name must be set for component scope targets.")
-            # Get the directory where the component coverage html report was generated. This directory will be copied to the variant report directory
-            component_coverage_html_dir = artifacts_locator.get_component_coverage_reports_dir(component_name)
-            component_variant_coverage_html_dir = artifacts_locator.get_component_variant_coverage_reports_dir(component_name)
-            component_variant_coverage_html_dirs.append(component_variant_coverage_html_dir)
-            # copy_directory has no canonical file output (it copies an arbitrary tree), so the tracked output is a stamp we touch ourselves.
-            # The destination dir is not given a directory provider: only this command writes into it, so there is no race to gate against.
-            copy_done_stamp = component_variant_coverage_html_dir.joinpath(".yanga.stamp")
-            copy_coverage_html_cmd = CMakeCustomCommand(
-                description=f"Copy coverage html report for component {component_name} to variant report directory",
-                outputs=[copy_done_stamp],
-                # The report file, not the target name: a target name is only an order-only dependency
-                depends=[artifacts_locator.get_component_coverage_html_file(component_name), gcovr_html_dir_provider.stamp],
-                commands=[
-                    CMakeCommand(
-                        "${CMAKE_COMMAND}",
-                        [
-                            "-E",
-                            "copy_directory",
-                            component_coverage_html_dir,
-                            component_variant_coverage_html_dir,
-                        ],
-                    ),
-                    CMakeCommand("${CMAKE_COMMAND}", ["-E", "touch", copy_done_stamp]),
-                ],
-            )
-            elements.append(copy_coverage_html_cmd)
-            copy_stamps.append(copy_done_stamp)
-
-        unit_tracefiles = [tracefile for name, tracefile in tracefiles.items() if not components[name].integrates]
-        integration_tracefiles = [tracefile for name, tracefile in tracefiles.items() if components[name].integrates]
-        if unit_tracefiles:
-            elements.extend(
-                self._create_merged_coverage(
-                    UserRequest(UserRequestScope.VARIANT, target=UserRequestTarget.COVERAGE),
-                    "Generate coverage report for the variant",
-                    "Generate variant coverage report",
-                    variant_reports_dir,
-                    gcovr_html_dir,
-                    unit_tracefiles,
-                    # It writes into the variant coverage reports directory, like the copies
-                    [gcovr_html_dir_provider.stamp],
-                    ["component", "merged", "coverage"],
-                )
-            )
-        # A component can sit in several containers; gcovr would count it twice
-        all_containers_tracefiles = list({str(tracefile): tracefile for tracefile in [*container_tracefiles, *integration_tracefiles]}.values())
-        if all_containers_tracefiles:
-            elements.extend(
-                self._create_merged_coverage(
-                    UserRequest(UserRequestScope.VARIANT, target="all_containers_coverage"),
-                    "Merge coverage for all containers",
-                    "Generate coverage report for all containers",
-                    variant_reports_dir,
-                    variant_reports_dir.joinpath("all_containers_coverage"),
-                    all_containers_tracefiles,
-                    [],
-                    ["container", "merged", "coverage"],
-                )
-            )
-        testing_block = find_testing_block(self.execution_context.variant_testing, GTEST_FRAMEWORK)
-        overall_tracefiles = [*tracefiles.values(), *([self._variant_test_tracefile()] if testing_block and testing_block.sources else [])]
-        if overall_tracefiles:
-            overall_target = UserRequest(UserRequestScope.VARIANT, target="overall_coverage")
-            elements.extend(
-                self._create_merged_coverage(
-                    overall_target,
-                    "Merge coverage for everything",
-                    "Generate coverage report for everything",
-                    variant_reports_dir,
-                    variant_reports_dir.joinpath("overall_coverage"),
-                    overall_tracefiles,
-                    # The copies run with the overall report: every copied report has a tracefile that it reads, so it exists whenever a copy does
-                    copy_stamps,
-                    ["overall", "coverage"],
-                )
-            )
-            # copy_directory populates these dirs with files unknown to ninja
-            elements.append(CMakeAddTargetCleanFiles(target=overall_target.target_name, files=[*component_variant_coverage_html_dirs]))
-        return elements
-
-    def _create_merged_coverage(
-        self,
-        target: UserRequest,
-        description: str,
-        target_description: str,
-        reports_dir: CMakePath,
-        html_dir: CMakePath,
-        tracefiles: list[CMakePath],
-        depends: list[CMakePath],
-        tags: list[str],
-    ) -> list[CMakeElement]:
-        """The merge reads only tracefiles, so it needs no object files and no gcovr config."""
-        html_file = html_dir.joinpath("index.html")
-        coverage_cmd = CMakeCustomCommand(
-            description=description,
-            outputs=[html_file],
-            depends=[*depends, *tracefiles],
-            commands=[
-                CMakeCommand("${CMAKE_COMMAND}", ["-E", "make_directory", html_dir]),
-                CMakeCommand(
-                    "gcovr",
-                    [
-                        "--root",
-                        CMakePath(self.execution_context.project_root_dir),
-                        *[argument for tracefile in tracefiles for argument in ("--add-tracefile", tracefile)],
-                        "--html-nested",
-                        "--html-theme",
-                        "boost.blue",
-                        "--output",
-                        html_file,
-                    ],
-                ),
-            ],
-        )
-        self.execution_context.data_registry.insert(
-            ReportRelevantFiles(
-                target=target,
-                files_to_be_included=[],
-                file_type=ReportRelevantFileType.COVERAGE_RESULT,
-                html_content=ReportRelevantHtmlContent(
-                    name="Coverage",
-                    # When registering an html content, the path shall be relative to the reports directory
-                    index_html=html_file.to_path().relative_to(reports_dir.to_path()),
-                ),
-                tags=tags,
-            ),
-            target.target_name,
-        )
-        return [
-            coverage_cmd,
-            CMakeCustomTarget(name=target.target_name, description=target_description, commands=[], depends=[html_file]),
-            # gcovr --html-nested populates the dir with files unknown to ninja.
-            # Register it for recursive removal on `clean` to avoid "Directory not empty" failures.
-            CMakeAddTargetCleanFiles(target=target.target_name, files=[html_dir]),
-        ]
+        return [coverage_cmd]

@@ -8,4 +8,5 @@ Understanding-oriented content that explains the concepts, design decisions, and
 :maxdepth: 1
 
 concepts
+decisions/0001-report-sections-per-framework-and-coverage-tool
 ```
