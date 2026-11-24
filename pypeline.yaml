@@ -8,6 +8,6 @@ pipeline:
   - include: pipeline/lint.yaml
   - include:
       file: pipeline/test.yaml
-      steps: [PyTest]
+      steps: [PoksInstall, PyTest]
   - step: Docs
     run: sphinx-build -E -a docs docs/_build

@@ -38,6 +38,36 @@ from .cmake_backend import (
 from .generator import CMakeGenerator
 
 VARIANT_TEST_NAME = "variant_test"
+# Generated and mockup code must not count in coverage, and a .gcda without a .gcno breaks gcovr.
+# -fno-condition-coverage exists from GCC 14 only.
+NO_COVERAGE_OPTIONS = [
+    "-fno-profile-arcs",
+    "-fno-test-coverage",
+    "$<$<AND:$<C_COMPILER_ID:GNU>,$<VERSION_GREATER_EQUAL:$<C_COMPILER_VERSION>,14>>:-fno-condition-coverage>",
+]
+
+
+def create_mockup_library(name: str, mockup_sources: list[Path], component_name: str | None) -> CMakeAddLibrary:
+    """Test-only helper sources: compiled without coverage, linked into the test binary."""
+    return CMakeAddLibrary(name=name, files=mockup_sources, compile_options=["-ggdb", *NO_COVERAGE_OPTIONS], component_name=component_name)
+
+
+def variant_test_components(components: list[Component]) -> list[Component]:
+    """
+    The components whose objects the variant ships.
+
+    An integration component holds test-only copies of the objects of the components it integrates; linking it too
+    would define their symbols twice.
+    """
+    return [component for component in components if not component.is_container and not component.integrates]
+
+
+def merge_block_mocking(platform_mocking: MockingConfig | None, testing_block: TestingBlock | None) -> MockingConfig | None:
+    """Merge the block's ``config.mocking`` over the platform mocking into a new config."""
+    if not (testing_block and testing_block.config.get("mocking")):
+        return platform_mocking
+    block_mocking = MockingConfig.from_dict(testing_block.config["mocking"])
+    return merge_configs(platform_mocking, block_mocking) if platform_mocking else block_mocking
 
 
 class GTestCMakeArtifactsLocator(CMakeArtifactsLocator):
@@ -115,7 +145,7 @@ class CMakeMockupCreator:
         build_dir: CMakePath,
         object_library_targets: list[str],
         mockup_target_name: str,
-        artifacts_locator: GTestCMakeArtifactsLocator,
+        artifacts_locator: CMakeArtifactsLocator,
         mocking_config: MockingConfig | None,
     ):
         self.name = name
@@ -169,9 +199,7 @@ class CMakeMockupCreator:
                 CMakeCommand(
                     "clanguru",
                     [
-                        "mock",
-                        "--filename",
-                        f"mockup_{self.name}",
+                        *self.get_clanguru_arguments(),
                         *[f"--source-file {source}" for source in sources],
                         "--partial-object-file",
                         partial_link_obj,
@@ -195,6 +223,10 @@ class CMakeMockupCreator:
             )
         )
         return elements
+
+    def get_clanguru_arguments(self) -> list[str]:
+        """The clanguru subcommand and its naming arguments; a subclass replaces them together with the generated files."""
+        return ["mock", "--filename", f"mockup_{self.name}"]
 
     def get_mockup_generated_files(self) -> list[CMakePath]:
         return [self.get_mockup_file("log"), self.get_mockup_file("h"), *self.get_mockup_sources()]
@@ -252,7 +284,7 @@ class GTestComponentCMakeGenerator:
         if testing_block and gtest_cmake_component.is_testable():
             mockup_library = None
             if testing_block.mockup_sources:
-                mockup_library = self.add_mockup_library(f"{component.name}_mockups", testing_block.mockup_sources, component.name)
+                mockup_library = create_mockup_library(f"{component.name}_mockups", testing_block.mockup_sources, component.name)
                 elements.append(mockup_library)
                 if include_dirs and not component_generator_config.use_global_includes:
                     elements.append(CMakeTargetIncludeDirectories(mockup_library.target_name, include_dirs, IncludeScope.PRIVATE))
@@ -331,15 +363,8 @@ class GTestComponentCMakeGenerator:
         return elements
 
     def _determine_component_generator_config(self, testing_block: TestingBlock | None) -> GTestCMakeGeneratorConfig:
-        """Merge the block's ``config.mocking`` over the platform mocking into a new config; the shared generator config stays untouched."""
-        if not (testing_block and testing_block.config.get("mocking")):
-            return self.config
-        block_mocking = MockingConfig.from_dict(testing_block.config["mocking"])
-        return replace(self.config, mocking=merge_configs(self.config.mocking, block_mocking) if self.config.mocking else block_mocking)
-
-    def add_mockup_library(self, name: str, mockup_sources: list[Path], component_name: str | None) -> CMakeAddLibrary:
-        """Test-only helper sources: compiled without coverage, linked into the test executable."""
-        return CMakeAddLibrary(name=name, files=mockup_sources, compile_options=["-ggdb"], component_name=component_name)
+        """A new config with the block's mocking; the shared generator config stays untouched."""
+        return replace(self.config, mocking=merge_block_mocking(self.config.mocking, testing_block))
 
     def add_executable(self, executable_name: str, sources: Sequence[Path | CMakePath], object_libraries: list[str], component_name: str | None) -> CMakeAddExecutable:
         return CMakeAddExecutable(
@@ -473,7 +498,7 @@ class GTestCMakeGenerator(CMakeGenerator):
         generator_config = component_generator._determine_component_generator_config(testing_block)
         build_dir = self.artifacts_locator.cmake_build_dir.joinpath(VARIANT_TEST_NAME)
         gcov_dir = build_dir.joinpath("gcov")
-        components = self._variant_test_components()
+        components = variant_test_components(self.execution_context.components)
         # The same target names the component generator gives the component object libraries
         object_libraries = [f"{component.name}_PC_lib" for component in components]
         compiled_object_libraries = [f"{component.name}_PC_lib" for component in components if component.sources]
@@ -483,7 +508,7 @@ class GTestCMakeGenerator(CMakeGenerator):
         elements: list[CMakeElement] = [CMakeComment(f"Variant test of {self.variant_name}")]
         mockup_library = None
         if testing_block.mockup_sources:
-            mockup_library = component_generator.add_mockup_library(f"{VARIANT_TEST_NAME}_mockups", testing_block.mockup_sources, None)
+            mockup_library = create_mockup_library(f"{VARIANT_TEST_NAME}_mockups", testing_block.mockup_sources, None)
             elements.append(mockup_library)
             if not generator_config.use_global_includes:
                 elements.append(CMakeTargetIncludeDirectories(mockup_library.target_name, include_dirs, IncludeScope.PRIVATE))
@@ -546,15 +571,6 @@ class GTestCMakeGenerator(CMakeGenerator):
             elements.extend(mockup_generator.generate())
         elements.append(CMakeEmptyLine())
         return elements
-
-    def _variant_test_components(self) -> list[Component]:
-        """
-        The components whose objects the variant ships.
-
-        An integration component holds test-only copies of the objects of the components it integrates; linking it too
-        would define their symbols twice.
-        """
-        return [component for component in self.execution_context.components if not component.is_container and not component.integrates]
 
     def create_variant_test_coverage(self, execute_tests_command: CMakeCustomCommand, object_libraries: list[str], sources: list[Path], gcov_dir: CMakePath) -> list[CMakeElement]:
         """Write the tracefile of the variant test; the collector builds its own coverage page."""

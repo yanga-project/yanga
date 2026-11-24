@@ -7,6 +7,8 @@
 - Component - the basic building block of a product variant.
 - Platform - the environment for which the product is built and deployed.
 - Assembly line - the process of building and deploying a product variant for a specific platform.
+- Test scope - what one test covers and what is built for it: a component, an integration component or a variant.
+- Test library - the shared library yanga builds for one test scope of a pytest test, with coverage and Python mocks. It is not the product's shared library.
 
 ## Concepts
 

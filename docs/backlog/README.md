@@ -10,11 +10,11 @@
 
 ### In Progress
 
+- [YANGA-013 — pytest test framework: test a component, an integration component or a variant through a shared library](yanga-013.md)
+
 ### Blocked
 
 ### Ready
-
-- [YANGA-013 — pytest test framework: test a component, an integration component or a variant through a shared library](yanga-013.md)
 
 ---
 

@@ -6,5 +6,7 @@ inputs:
 
 pipeline:
   - include: bootstrap.yaml
+  - step: PoksInstall
+    module: pypeline.steps.poks_install
   - step: PyTest
     run: pytest
