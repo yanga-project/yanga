@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -5,7 +6,7 @@ from yanga_core.domain.execution_context import UserRequest
 from yanga_core.domain.spl_paths import SPLPaths
 
 from .artifacts_locator import CMakeArtifactsLocator
-from .cmake_backend import CMakePath
+from .cmake_backend import CMakeCommand, CMakeCustomCommand, CMakePath
 
 
 @dataclass
@@ -14,6 +15,46 @@ class CoverageRelevantFile:
 
     target: UserRequest
     json_report: CMakePath
+    #: The `testing` framework whose tests wrote the tracefile
+    framework: str
+
+
+def create_coverage_tracefile_command(
+    description: str,
+    depends: Sequence[str | CMakePath] | None,
+    object_library_targets: list[str],
+    sources: list[Path],
+    project_dir: Path,
+    config_file: CMakePath,
+    json_file: CMakePath,
+    gcov_prefix_dir: CMakePath | None = None,
+) -> CMakeCustomCommand:
+    """Write the gcovr config of a test run and its JSON tracefile, which the collector merges."""
+    gcov_prefix_arguments: list[str | CMakePath] = ["--gcov-prefix", gcov_prefix_dir] if gcov_prefix_dir else []
+    return CMakeCustomCommand(
+        description=description,
+        outputs=[config_file, json_file],
+        depends=depends,
+        command_expand_lists=True,
+        commands=[
+            CMakeCommand(
+                "yanga_cmd",
+                [
+                    "gcovr_config_component",
+                    "--component-objects",
+                    *[f"$<TARGET_OBJECTS:{target}>" for target in object_library_targets],
+                    "--source-files",
+                    *[CMakePath(source) for source in sources],
+                    "--project-dir",
+                    CMakePath(project_dir),
+                    *gcov_prefix_arguments,
+                    "--output-file",
+                    config_file,
+                ],
+            ),
+            CMakeCommand("gcovr", ["--config", config_file, "--json", "--output", json_file, "--json-pretty"]),
+        ],
+    )
 
 
 class CoverageArtifactsLocator(CMakeArtifactsLocator):

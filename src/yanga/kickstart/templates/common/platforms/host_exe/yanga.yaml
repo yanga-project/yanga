@@ -37,6 +37,8 @@ platforms:
               strict: true
               exclude_symbol_patterns:
                 - "_*"
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
       # cppcheck is not yet available via poks
       #- step: CppCheckCMakeGenerator
       #  module: yanga.cmake.cppcheck

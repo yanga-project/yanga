@@ -6,7 +6,7 @@ from mashumaro.exceptions import InvalidFieldValue, MissingField
 from pypeline_semantic_release.check_ci_context import CIContext, CISystem
 from yanga_core.domain.component_resolver import ComponentResolver
 from yanga_core.domain.config import ComponentConfig, DocsConfig, TestingBlockConfig
-from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope, UserRequestTarget
+from yanga_core.domain.execution_context import ExecutionContext, UserRequest, UserRequestScope
 from yanga_core.domain.publish_manifest import PublishedFile, PublishKind
 from yanga_core.domain.reports import ReportRelevantFiles, ReportRelevantFileType
 
@@ -127,9 +127,9 @@ def test_component_report_lists_the_registered_test_sources(tmp_path: Path, outp
     testing = [TestingBlockConfig(framework="gtest", sources=["test_gtest.cc"]), TestingBlockConfig(framework="tessy", sources=["test_tessy.c"])]
     configs = [ComponentConfig(name="CompA", path=Path("compA"), sources=["compA_source.cpp"], testing=testing)]
     execution_context = make_execution_context(tmp_path, configs)
-    target = UserRequest(UserRequestScope.COMPONENT, component_name="CompA", target=UserRequestTarget.TEST)
+    target = UserRequest(UserRequestScope.COMPONENT, component_name="CompA", target="gtest_test")
     junit_report = CMakeArtifactsLocator(output_dir, execution_context.spl_paths).get_component_build_dir("CompA").joinpath("CompA_junit.xml")
-    test_result = TestResultFile(target=target, junit_report=junit_report, test_sources=execution_context.components[0].testing[0].sources)
+    test_result = TestResultFile(target=target, junit_report=junit_report, test_sources=execution_context.components[0].testing[0].sources, framework="gtest")
     execution_context.data_registry.insert(test_result, target.target_name)
 
     ReportCMakeGenerator(execution_context, output_dir).create_components_cmake_elements()
@@ -145,9 +145,9 @@ def make_generator(execution_context: ExecutionContext, output_dir: Path, config
 
 
 def register_comp_a_test_result(execution_context: ExecutionContext, output_dir: Path) -> None:
-    target = UserRequest(UserRequestScope.COMPONENT, component_name="CompA", target=UserRequestTarget.TEST)
+    target = UserRequest(UserRequestScope.COMPONENT, component_name="CompA", target="gtest_test")
     junit_report = CMakeArtifactsLocator(output_dir, execution_context.spl_paths).get_component_build_dir("CompA").joinpath("CompA_junit.xml")
-    test_result = TestResultFile(target=target, junit_report=junit_report, test_sources=execution_context.components[0].testing[0].sources)
+    test_result = TestResultFile(target=target, junit_report=junit_report, test_sources=execution_context.components[0].testing[0].sources, framework="gtest")
     execution_context.data_registry.insert(test_result, target.target_name)
 
 

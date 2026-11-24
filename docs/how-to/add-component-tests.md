@@ -5,13 +5,13 @@ This guide shows how to configure unit testing for your Yanga components using G
 ## Prerequisites
 
 - A Yanga project with at least one component
-- A test platform configured with `GTestCMakeGenerator`
+- A test platform configured with `GTestCMakeGenerator` and `TestResultsCMakeGenerator`
 
 ## Steps
 
 ### 1. Configure a test platform
 
-Add a platform with the `GTestCMakeGenerator`:
+Add a platform with the `GTestCMakeGenerator`, followed by the `TestResultsCMakeGenerator` that makes the `test` and `coverage` targets:
 
 ```yaml
 platforms:
@@ -26,6 +26,8 @@ platforms:
             strict: false
             exclude_symbol_patterns:
               - "_*"
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
 ```
 
 ### 2. Add test sources to your component
@@ -76,6 +78,8 @@ Build and run tests for your component:
 yanga run --platform gtest --target my_component_test
 ```
 
+`my_component_test` runs every test framework of the component. To run only the gtest block, use `my_component_gtest_test`.
+
 Or run all tests:
 
 ```bash
@@ -125,7 +129,7 @@ variants:
 - **Integration components:** the variant test does not link an integration component, because its objects are second copies of the components it integrates.
 - **`main`:** if a selected component defines `main()`, the linker takes it instead of the `main` of GoogleTest, and the executable runs the product, not the tests. Select such a component only on the platforms that build the product, as `main` above.
 - **Results:** `yanga run --platform gtest --target test` builds and runs the variant test (the default target runs it too). The variant report shows its JUnit result (with `SphinxTestReportCMakeGenerator`) and its coverage on its own **Coverage** page. Every coverage page has this title; the chapter that includes it gives the level. The variant test also counts in the overall coverage; the merged coverage of all components holds only the component unit tests (see the report entry tags in the CMake reference).
-- **Platforms:** only a platform with `GTestCMakeGenerator` builds the variant test. A variant without a `gtest` block builds as before.
+- **Platforms:** only a platform with `GTestCMakeGenerator` builds the variant test; `variant_gtest_test` runs only it. A variant without a `gtest` block builds as before.
 
 ## See also
 

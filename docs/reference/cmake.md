@@ -54,18 +54,9 @@ This generator facilitates unit testing using the Google Test framework. For eac
 
 **Use Case:** Running unit tests and generating coverage reports for individual components.
 
-The coverage reports are gcovr HTML reports in nested mode with the `boost.blue` theme: a sidebar shows the files as a folder tree under their common path, and a switch shows them as a flat list. The entry page of each report is `index.html`.
+It builds the test executable, runs it as `<name>_gtest_test` (`variant_gtest_test` for the variant test), and registers the JUnit file and a gcovr tracefile. The phony `<name>_test`, the coverage reports and the merged levels come from `TestResultsCMakeGenerator` (below), which a platform that tests must list after it.
 
-A container component compiles nothing itself; its `test` and `build` targets run the tests of its subcomponents. An integration component is a component whose sources include those of the components it integrates; it builds like any component, and all its results are container level results (see [Report entry tags](#report-entry-tags)).
-
-Besides the coverage of each component and of the variant test, the generator merges the coverage per level. It reads only the gcovr JSON tracefiles, so unit and integration counters never mix in a component page or in the all components page.
-
-* `coverage`: all unit components, in `coverage/index.html` of the variant reports directory.
-* `<container>_coverage`: the subcomponents of the container, in the container report. `overall_coverage` copies it to `coverage/<container>` of the variant reports directory.
-* `all_containers_coverage`: the subcomponents of every container and every integration component, in `all_containers_coverage/index.html`.
-* `overall_coverage`: every component test and the variant test, in `overall_coverage/index.html`.
-
-Every coverage page is named **Coverage**; the chapter that includes it gives the level. A level without any tracefile gets no target and no report entry. The report entries carry tags, see [Report entry tags](#report-entry-tags).
+A container component compiles nothing itself. An integration component is a component whose sources include those of the components it integrates; it builds like any component, and all its results are container level results (see [Report entry tags](#report-entry-tags)).
 
 **Configuration:**
 
@@ -82,6 +73,52 @@ platforms:
             enabled: true
             strict: false # If true, clanguru parsing errors are fatal.
             exclude_symbol_patterns: ["_*"] # Symbols to exclude from mocking.
+```
+
+## `TestResultsCMakeGenerator`
+
+This generator collects what the test generators registered, so one place makes the targets and the coverage for every test framework. The test generators only build, run and register: a JUnit file and a gcovr tracefile per entry.
+
+**Use Case:** Running all the tests of a component with one target and getting one coverage report, whatever frameworks test it.
+
+A platform that tests must list this generator after the test generators (`GTestCMakeGenerator`) and before `SphinxTestReportCMakeGenerator` and `ReportCMakeGenerator`. Add this line to the platform:
+
+```yaml
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
+```
+
+It creates these targets:
+
+* `<name>_test`: runs every framework of the component, in the order of its `testing` list. `<name>_build` runs the same builds. A container runs the tests of its subcomponents.
+* `test`: runs every framework of the variant test.
+* `<name>_coverage` and `variant_test_coverage`: the coverage report of the component or the variant test, merged over its frameworks.
+
+The coverage reports are gcovr HTML reports in nested mode with the `boost.blue` theme: a sidebar shows the files as a folder tree under their common path, and a switch shows them as a flat list. The entry page of each report is `index.html`.
+
+Besides the coverage of each component and of the variant test, the generator merges the coverage per level. It reads only the gcovr JSON tracefiles, so unit and integration counters never mix in a component page or in the all components page.
+
+* `coverage`: all unit components, in `coverage/index.html` of the variant reports directory.
+* `<container>_coverage`: the subcomponents of the container, in the container report. `overall_coverage` copies it to `coverage/<container>` of the variant reports directory.
+* `all_containers_coverage`: the subcomponents of every container and every integration component, in `all_containers_coverage/index.html`.
+* `overall_coverage`: every component test and the variant test, in `overall_coverage/index.html`.
+
+Each coverage entry is a markdown page named **Coverage**, with one section per coverage tool. The `gcovr` section links the gcovr HTML report. The HTML is not registered as report content itself, so the report lists Coverage once. The chapter that includes the page gives the level. A level without any tracefile gets no target and no report entry. The report entries carry tags, see [Report entry tags](#report-entry-tags).
+
+**Configuration:**
+
+```yaml
+platforms:
+  - name: gtest
+    generators:
+      - step: GTestCMakeGenerator
+        module: yanga.cmake.gtest
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
+      - step: SphinxTestReportCMakeGenerator
+        module: yanga.cmake.sphinx_test_report
+      - step: ReportCMakeGenerator
+        module: yanga.cmake.reports
 ```
 
 ## `CppCheckCMakeGenerator`
@@ -104,9 +141,11 @@ platforms:
 
 ## `SphinxTestReportCMakeGenerator`
 
-This generator renders the GoogleTest results for the reports. For every component or variant JUnit report that `GTestCMakeGenerator` registers, it writes a `<component>_test_report.rst` page (`<variant>_test_report.rst` for the variant test) with a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive (JUnit file relative to the project root, results expanded) and registers it as the component test result. The page heading is **Test Results**, the same on every test page; the chapter that includes it gives the level. The project must load the `sphinx_test_reports` extension in its `conf.py`.
+This generator renders the test results for the reports. For every JUnit report that a test generator registers, it writes one `<component>_test_report.rst` page per entry (`<variant>_test_report.rst` for the variant test) and registers it as the test result. The page heading is **Test Results**, the same on every test page; the chapter that includes it gives the level. The page has one section per framework, in the order of the `testing` list. Each section has a [sphinx-test-reports](https://sphinx-test-reports.readthedocs.io) `test-report` directive (JUnit file relative to the project root, results expanded). The project must load the `sphinx_test_reports` extension in its `conf.py`.
 
-It also writes merged pages. For each JUnit file of its level, a page has a heading with the test's name and a `test-report` block like the one on the test page. sphinx-test-reports derives the need IDs from the block's `:id:`, so each id holds the page and the test (`TR_<PAGE>__<TEST>`, where `<PAGE>` is the container name, `ALL_COMPONENTS`, `ALL_CONTAINERS` or `OVERALL`). One JUnit file on several pages then makes distinct needs, and the double underscore keeps a merged id apart from a test page id `TR_<NAME>`.
+sphinx-test-reports derives the need IDs from the directive's `:id:`. The id of gtest is `TR_<NAME>`; the id of another framework is `TR_<NAME>__<FRAMEWORK>`. Non-word characters become `_` and the id is upper case. The gtest ids do not change when another framework joins the page.
+
+It also writes merged pages. For each component of its level, a page has a section with the component's name and a subsection per framework, each with a `test-report` block. The ids hold the page and the test (`TR_<PAGE>__<NAME>` for gtest, `TR_<PAGE>__<NAME>__<FRAMEWORK>` for another framework, where `<PAGE>` is the container name, `ALL_COMPONENTS`, `ALL_CONTAINERS` or `OVERALL`). One JUnit file on several pages then makes distinct needs, and the double underscore keeps a merged id apart from a test page id.
 
 * `<container>_test_report.rst`: the tests of the container's subcomponents, in the container report.
 * `all_components_test_report.rst` (target `all_components_test`): the tests of all unit components.
@@ -119,7 +158,7 @@ A level without any JUnit file gets no page and no target. The report entries ca
 
 **Configuration:**
 
-This generator is added as a step without configuration, after `GTestCMakeGenerator` and before `ReportCMakeGenerator`.
+This generator is added as a step without configuration, after `TestResultsCMakeGenerator` and before `ReportCMakeGenerator`.
 
 ```yaml
 platforms:
@@ -127,6 +166,8 @@ platforms:
     generators:
       - step: GTestCMakeGenerator
         module: yanga.cmake.gtest
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
       - step: SphinxTestReportCMakeGenerator
         module: yanga.cmake.sphinx_test_report
       - step: ReportCMakeGenerator
@@ -172,7 +213,7 @@ This generator orchestrates the creation of comprehensive HTML reports for both 
 * User-provided documentation (e.g., Markdown files).
 * Source code documentation (component sources or generated by the auto-mocker).
 * Static analysis reports (from `CppCheckCMakeGenerator` or `ClangTidyCMakeGenerator`).
-* Coverage reports (from `GTestCMakeGenerator`) and test reports (from `SphinxTestReportCMakeGenerator`).
+* Coverage reports (from `TestResultsCMakeGenerator`) and test reports (from `SphinxTestReportCMakeGenerator`).
 
 It tags the docs and sources pages, see [Report entry tags](#report-entry-tags). It registers the variant report (`<variant build dir>/reports/index.html`) as a `PublishedFile` for the SPL overview, so a `WritePublishManifest` at the end of the build links it when the `report` target ran.
 
@@ -231,8 +272,8 @@ The levels:
 The tags of each generator:
 
 * `ReportCMakeGenerator`: docs page `[<level>, <name>, docs]`, sources page `[<level>, <name>, sources]`.
-* `SphinxTestReportCMakeGenerator`: test page `[<level>, <name>, test]`, variant test page `[variant, test]`, container page `[container, <name>, test]`, all components `[component, merged, test]`, all containers `[container, merged, test]`, overall `[overall, test]`.
-* `GTestCMakeGenerator`: component coverage `[<level>, <name>, coverage]`, variant test `[variant, coverage]`, container `[container, <name>, coverage]`, all components `[component, merged, coverage]`, all containers `[container, merged, coverage]`, overall `[overall, coverage]`.
+* `SphinxTestReportCMakeGenerator`: test page `[<level>, <name>, test]`, variant test page `[variant, test]`, container page `[container, <name>, test]`, all components `[component, merged, test]`, all containers `[container, merged, test]`, overall `[overall, test]`. Each also carries the frameworks of its page, for example `gtest`.
+* `TestResultsCMakeGenerator`: component coverage `[<level>, <name>, coverage]`, variant test `[variant, coverage]`, container `[container, <name>, coverage]`, all components `[component, merged, coverage]`, all containers `[container, merged, coverage]`, overall `[overall, coverage]`. Each also carries `gcovr` and the frameworks whose tracefiles it merges, for example `gtest`.
 * `ClangTidyCMakeGenerator`: component `[<level>, <name>, static-analysis]`, container `[container, <name>, static-analysis]`, all containers `[container, merged, static-analysis]`, all components (`lint`) `[component, merged, static-analysis]`, overall (`overall_lint`) `[overall, static-analysis]`.
 * `CppCheckCMakeGenerator`: component `[<level>, <name>, static-analysis]`. A component without sources, a container for example, gets no report.
 

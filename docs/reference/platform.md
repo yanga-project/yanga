@@ -53,6 +53,8 @@ platforms:
     generators:
       - step: GTestCMakeGenerator
         module: yanga.cmake.gtest
+      - step: TestResultsCMakeGenerator
+        module: yanga.cmake.test_results
 ```
 
 See the [CMake Generators](#cmake-generators) documentation for more details on available generators and their configurations.

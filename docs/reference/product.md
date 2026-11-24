@@ -264,8 +264,8 @@ For a component there are multiple documentation sources generated and collected
 - user defined component documentation (e.g., `docs/*.md` files)
 - source code documentation (e.g., productive and test code) - for every source file a separate markdown file is generated using the `clanguru` Python package
 - static analysis reports - `cppcheck` xml report is converted to markdown
-- test execution report - a `sphinx-test-reports` page for the `GoogleTest` JUnit report, written by `SphinxTestReportCMakeGenerator`
-- code coverage report - the `gcovr` markdown report
+- test execution report - a `sphinx-test-reports` page with a section per test framework, written by `SphinxTestReportCMakeGenerator`
+- code coverage report - a markdown page that links the `gcovr` HTML report, written by `TestResultsCMakeGenerator`
 
 These files are collected and configured to be processed by Sphinx to generate a single HTML documentation for the component.
 
