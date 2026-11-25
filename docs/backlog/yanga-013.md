@@ -1,5 +1,5 @@
 ---
-status: In Progress
+status: Done (2026-11-25)
 priority: Medium
 blocked_by: [CLG-019, YANGA-012]
 related: [YANGA-004, YANGA-005]
@@ -65,7 +65,7 @@ A pytest plugin with fixtures; third-party binding generators (cffi, ctypesgen);
 
 ## Acceptance criteria
 
-- [ ] A gcov data file is written when a pytest process that loaded a test library through `ctypes` exits, on macOS, Linux and Windows. Check: a yanga test with the clang installed by poks, in CI on Ubuntu and Windows; on macOS the human runs it once by hand.
+- [x] A gcov data file is written when a pytest process that loaded a test library through `ctypes` exits, on macOS, Linux and Windows. Check: a yanga test with the clang installed by poks, in CI on Ubuntu and Windows; on macOS the human runs it once by hand.
 - [x] `PytestCMakeGenerator` builds the test library, writes the binding, runs pytest and registers the JUnit file and the coverage for a component, an integration component and a variant. Check: yanga's CMake element tests in `pypeline run`; that it really runs pytest is checked by SPLedY's UAT.
 - [x] Without pytest in the environment, the build stops with a message that names pytest. Check: a yanga test.
 - [x] The terms *test scope* and *test library* are in yanga's docs, and the usage of the pytest block is in its how-to. Check: the docs build in `pypeline run`.
